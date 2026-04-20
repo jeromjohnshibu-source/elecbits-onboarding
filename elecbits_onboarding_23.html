@@ -1077,27 +1077,77 @@ async function sbLoadAllModuleMeta() {
 
 // ── DOCUMENTS: upload a doc ──
 async function sbSaveDoc(moduleId, dept, docObj) {
-  await sbPost('documents', {
-    module_id: moduleId,
-    dept: dept,
-    title: docObj.title,
-    filename: docObj.filename,
-    file_data: docObj.data,
-    mime_type: docObj.mime||'application/octet-stream',
-    file_size: docObj.size||'',
-    uploaded_by: (S.user&&S.user.email)||'',
-    uploaded_at: new Date().toISOString()
-  });
+  try {
+    // Step 1: Upload file to Supabase Storage bucket
+    const filePath = moduleId + '/' + dept + '/' + Date.now() + '_' + docObj.filename;
+    // Convert base64 to blob
+    const base64 = docObj.data.split(',')[1] || docObj.data;
+    const byteChars = atob(base64);
+    const byteArr = new Uint8Array(byteChars.length);
+    for(let i=0; i<byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], {type: docObj.mime||'application/octet-stream'});
+
+    const storageRes = await fetch(
+      'https://yrumjtzhwlyajmneaxco.supabase.co/storage/v1/object/documents/' + filePath,
+      {
+        method: 'POST',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlydW1qdHpod2x5YWptbmVheGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODI2MDIsImV4cCI6MjA5MjI1ODYwMn0.Iakq3Jdu2UbSpNsaXhJeBeq1k7Xa0XdrdhWOMSaJL6U',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlydW1qdHpod2x5YWptbmVheGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODI2MDIsImV4cCI6MjA5MjI1ODYwMn0.Iakq3Jdu2UbSpNsaXhJeBeq1k7Xa0XdrdhWOMSaJL6U',
+          'Content-Type': docObj.mime||'application/octet-stream',
+          'x-upsert': 'true'
+        },
+        body: blob
+      }
+    );
+
+    if(!storageRes.ok) {
+      const err = await storageRes.text();
+      console.error('Storage upload failed:', err);
+      // Fallback: save without file_data (metadata only)
+      await sbPost('documents', {
+        module_id: moduleId, dept: dept, title: docObj.title,
+        filename: docObj.filename, file_data: null,
+        mime_type: docObj.mime||'application/octet-stream',
+        file_size: docObj.size||'', uploaded_by: (S.user&&S.user.email)||'',
+        uploaded_at: new Date().toISOString()
+      });
+      return;
+    }
+
+    // Step 2: Get public URL
+    const fileUrl = 'https://yrumjtzhwlyajmneaxco.supabase.co/storage/v1/object/public/documents/' + filePath;
+
+    // Step 3: Save metadata + URL to documents table (no base64 — small payload)
+    await sbPost('documents', {
+      module_id: moduleId, dept: dept, title: docObj.title,
+      filename: docObj.filename, file_url: fileUrl, file_data: fileUrl,
+      mime_type: docObj.mime||'application/octet-stream',
+      file_size: docObj.size||'', uploaded_by: (S.user&&S.user.email)||'',
+      uploaded_at: new Date().toISOString()
+    });
+    console.log('✓ Doc saved to Supabase Storage:', fileUrl);
+  } catch(e) {
+    console.error('sbSaveDoc error:', e);
+  }
 }
 
 // ── DOCUMENTS: load docs for a module+dept ──
 async function sbLoadDocs(moduleId, dept) {
-  const filter = `module_id=eq.${moduleId}&dept=in.(${dept},All)`;
+  // Clean dept — remove spaces
+  const cleanDept = dept ? dept.replace(/\s+/g,'') : 'All';
+  const filter = 'module_id=eq.'+moduleId+'&dept=in.('+cleanDept+',All)';
   const rows = await sbGet('documents', filter);
   if (!rows) return [];
   return rows.map(r => ({
-    title: r.title, filename: r.filename, data: r.file_data,
-    mime: r.mime_type, size: r.file_size, date: r.uploaded_at ? r.uploaded_at.split('T')[0] : '',
+    title: r.title,
+    filename: r.filename,
+    // file_url is the Storage URL, file_data is fallback base64
+    data: r.file_url || r.file_data || null,
+    isUrl: !!(r.file_url),
+    mime: r.mime_type,
+    size: r.file_size,
+    date: r.uploaded_at ? r.uploaded_at.split('T')[0] : '',
     id: r.id
   }));
 }
@@ -3513,8 +3563,11 @@ function _renderDocsInner(mod, docsEl, uploadEl){
     <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text)">${d.title}</div>
     <div class="muted" style="margin-top:2px">Uploaded ${d.date} · ${d.size||''}</div></div>
     <div style="display:flex;gap:6px">
-      ${d.data?`<button class="btn outline xs" onclick="(function(){var w=window.open();w.document.write('<iframe src=\\''+d.data+'\\' style=\\'width:100%;height:100vh;border:0\\'></iframe>');w.document.close();})();">👁 View</button>`:''}
-      ${d.data?`<button class="btn outline xs" onclick="(function(){var a=document.createElement('a');a.href='${d.data}';a.download='${d.filename}';a.click();})();">⬇ Download</button>`:''}
+      ${d.data?(d.isUrl?
+        `<button class="btn outline xs" onclick="window.open('${d.data}','_blank')">👁 View</button>
+         <a href="${d.data}" download="${d.filename}" class="btn outline xs" style="text-decoration:none;">⬇ Download</a>`
+        :`<button class="btn outline xs" onclick="(function(){var w=window.open();w.document.write('<iframe src=\\''+d.data+'\\' style=\\'width:100%;height:100vh;border:0\\'></iframe>');w.document.close();})();">👁 View</button>
+         <button class="btn outline xs" onclick="(function(){var a=document.createElement('a');a.href='${d.data}';a.download='${d.filename}';a.click();})();">⬇ Download</button>`):''}
       ${S.user?.role==='admin'||S.user?.role==='lead'?`<button class="btn ghost xs" onclick="removeModuleDoc('${mod.id}',${i})">✕</button>`:''}
     </div>
   </div>`).join('')
