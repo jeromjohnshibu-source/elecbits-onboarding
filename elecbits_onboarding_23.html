@@ -1131,12 +1131,12 @@ console.log('✓ Supabase connected:', SUPA_URL);
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-// v14 — Supabase database integration
-const _SV='eb14_';
+// v16 — all modules unlocked
+const _SV='eb16_';
 const LS=k=>{try{return JSON.parse(localStorage.getItem(_SV+k))}catch{return null}};
 const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){console.warn('Storage unavailable:',e);}};
 // Wipe ALL previous eb_ versioned keys so stale data never loads
-(function(){try{Object.keys(localStorage).filter(k=>/^eb([1-9]|1[0-3])_/.test(k)).forEach(k=>localStorage.removeItem(k));}catch(e){}})();
+(function(){try{Object.keys(localStorage).filter(k=>/^eb([1-9]|1[0-5])_/.test(k)).forEach(k=>localStorage.removeItem(k));}catch(e){}})();
 
 let S = LS('state') || {
   user: null,
@@ -1144,25 +1144,25 @@ let S = LS('state') || {
   sections: [
     {id:'s1',title:'Section I — Electronics & Company Overview',dept:'all',modules:[
       {id:'m1',title:'Elecbits story & overview',type:'document',time:18,desc:'Company context, origin, and mission. Why Elecbits exists, what problem it solves.',status:'not-started',note:'',date:'',host:'Saurav Singh',prereads:[{title:'About Elecbits',url:'https://elecbits.in/about-us/'}],postreads:[{title:'Elecbits XOR Platform',url:'https://xor.elecbits.in'}],quiz:[]},
-      {id:'m2',title:'Business & operating model',type:'document',time:15,desc:'ODM, Box Build, revenue streams and how Elecbits makes money.',status:'locked',note:'',date:'',host:'Saurav Singh',prereads:[],postreads:[],quiz:[]},
-      {id:'m3',title:'Organisation structure',type:'document',time:12,desc:'Hierarchy, departments, and department heads at Elecbits.',status:'locked',note:'',date:'',host:'HR Team',prereads:[],postreads:[],quiz:[]},
+      {id:'m2',title:'Business & operating model',type:'document',time:15,desc:'ODM, Box Build, revenue streams and how Elecbits makes money.',status:'not-started',note:'',date:'',host:'Saurav Singh',prereads:[],postreads:[],quiz:[]},
+      {id:'m3',title:'Organisation structure',type:'document',time:12,desc:'Hierarchy, departments, and department heads at Elecbits.',status:'not-started',note:'',date:'',host:'HR Team',prereads:[],postreads:[],quiz:[]},
     ]},
     {id:'s2',title:'Section II — Industry Foundation',dept:'all',modules:[
-      {id:'m4',title:'Module 1: Introduction to electronics industry',type:'video',time:22,desc:'Consumer, industrial, IoT, automotive electronics and where Elecbits fits.',status:'locked',note:'',date:'2026-04-08T10:00',host:'Nikhil Rawat',prereads:[{title:'Electronics industry overview',url:'#'}],postreads:[{title:'IoT product teardowns',url:'#'}],quiz:[
+      {id:'m4',title:'Module 1: Introduction to electronics industry',type:'video',time:22,desc:'Consumer, industrial, IoT, automotive electronics and where Elecbits fits.',status:'not-started',note:'',date:'2026-04-08T10:00',host:'Nikhil Rawat',prereads:[{title:'Electronics industry overview',url:'#'}],postreads:[{title:'IoT product teardowns',url:'#'}],quiz:[
         {q:'What does EMS stand for?',opts:['Electronic Measurement System','Electronics Manufacturing Services','Embedded Microcontroller Setup','Engineering Management System'],ans:1},
         {q:'Which country is known for mass electronics manufacturing?',opts:['USA','India','Japan','China'],ans:3},
       ]},
-      {id:'m5',title:'Module 2: EMS, ODM, OEM — business models',type:'document',time:20,desc:'OEM vs ODM vs EMS explained with Elecbits context.',status:'locked',note:'',date:'2026-04-09T10:00',host:'Saurav Singh',prereads:[{title:'OEM vs ODM comparison',url:'#'}],postreads:[{title:'Case study: Idea to manufacturing',url:'#'}],quiz:[]},
-      {id:'m6',title:'Module 3: Basic building blocks of electronics',type:'video',time:45,desc:'Resistors, capacitors, ICs, microcontrollers — what they are and how they work.',status:'locked',note:'',date:'2026-04-15T10:00',host:'Nikhil Rawat',prereads:[{title:'Basic electronics components',url:'#'}],postreads:[{title:'PCB component identification guide',url:'#'}],quiz:[
+      {id:'m5',title:'Module 2: EMS, ODM, OEM — business models',type:'document',time:20,desc:'OEM vs ODM vs EMS explained with Elecbits context.',status:'not-started',note:'',date:'2026-04-09T10:00',host:'Saurav Singh',prereads:[{title:'OEM vs ODM comparison',url:'#'}],postreads:[{title:'Case study: Idea to manufacturing',url:'#'}],quiz:[]},
+      {id:'m6',title:'Module 3: Basic building blocks of electronics',type:'video',time:45,desc:'Resistors, capacitors, ICs, microcontrollers — what they are and how they work.',status:'not-started',note:'',date:'2026-04-15T10:00',host:'Nikhil Rawat',prereads:[{title:'Basic electronics components',url:'#'}],postreads:[{title:'PCB component identification guide',url:'#'}],quiz:[
         {q:'What is a resistor used for?',opts:['Storing charge','Opposing current flow','Amplifying signals','Converting AC to DC'],ans:1},
         {q:'What does a microcontroller integrate?',opts:['Only a CPU','CPU, memory and I/O','Only memory','Only I/O ports'],ans:1},
       ]},
       {id:'m7',title:'Module 4: Printed circuit boards (PCB)',type:'document',time:40,desc:'What is a PCB, types (single/double/multi-layer), and their uses.',status:'not-started',note:'',date:'2026-04-17T10:00',host:'Nikhil Rawat',prereads:[],postreads:[{title:'PCB teardown video',url:'#'}],quiz:[]},
-      {id:'m8',title:'Module 5: Electronics manufacturing',type:'video',time:35,desc:'SMT, THT, assembly, testing flow.',status:'locked',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
-      {id:'m9',title:'Module 6: Hardware vs firmware',type:'document',time:20,desc:'How hardware and firmware interact in a real product.',status:'locked',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
-      {id:'m10',title:'Module 7: Product development lifecycle',type:'document',time:30,desc:'Req → Design → Proto → Test → Mfg',status:'locked',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
-      {id:'m11',title:'Module 8: PCB manufacturing flow',type:'video',time:35,desc:'End-to-end fabrication and assembly process.',status:'locked',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
-      {id:'m12',title:'Module 9: Industry terminology glossary',type:'document',time:25,desc:'BOM, Gerber, RFQ, MOQ, TAT, yield — all explained.',status:'locked',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
+      {id:'m8',title:'Module 5: Electronics manufacturing',type:'video',time:35,desc:'SMT, THT, assembly, testing flow.',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
+      {id:'m9',title:'Module 6: Hardware vs firmware',type:'document',time:20,desc:'How hardware and firmware interact in a real product.',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
+      {id:'m10',title:'Module 7: Product development lifecycle',type:'document',time:30,desc:'Req → Design → Proto → Test → Mfg',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
+      {id:'m11',title:'Module 8: PCB manufacturing flow',type:'video',time:35,desc:'End-to-end fabrication and assembly process.',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
+      {id:'m12',title:'Module 9: Industry terminology glossary',type:'document',time:25,desc:'BOM, Gerber, RFQ, MOQ, TAT, yield — all explained.',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
     ]},
     {id:'s3',title:'Section III — <span class="dept-label-sec"></span> Onboarding',dept:'all',modules:[
       {id:'m13',title:'Module 1: Understanding the Team',type:'document',time:20,desc:'What this team does, who is in it, and where it sits.',status:'not-started',note:'',date:'',host:'',prereads:[],postreads:[],quiz:[]},
@@ -1177,9 +1177,9 @@ let S = LS('state') || {
   ],
   milestones: [
     {id:'ms1',title:'Week 1 — Company orientation complete',sub:'Elecbits overview, team intros, org structure',status:'in-progress'},
-    {id:'ms2',title:'Industry foundation complete',sub:'9 modules — unlocks departmental training',status:'locked'},
-    {id:'ms3',title:'Department onboarding complete',sub:'All 7 chapters — team, flow, access, tools, resources, first tasks',status:'locked'},
-    {id:'ms4',title:'Full onboarding complete',sub:'All sections done',status:'locked'},
+    {id:'ms2',title:'Industry foundation complete',sub:'9 modules — unlocks departmental training',status:'not-started'},
+    {id:'ms3',title:'Department onboarding complete',sub:'All 7 chapters — team, flow, access, tools, resources, first tasks',status:'not-started'},
+    {id:'ms4',title:'Full onboarding complete',sub:'All sections done',status:'not-started'},
   ],
   careerMilestones: {
     'Hardware': [
@@ -1282,6 +1282,8 @@ const _SECTION_TEMPLATE = (function(){
 // ── Global session map: moduleId → sessionId ──
 const SESSION_MAP = {
   'm1':'eb-overview','Elecbits story & overview':'eb-overview',
+  'm2':'m5-business','Business & operating model':'m5-business',
+  'm3':'eb-overview','Organisation structure':'eb-overview',
   'm4':'m4-electronics','Module 1: Introduction to electronics industry':'m4-electronics',
   'm5':'m5-business','Module 2: EMS, ODM, OEM — business models':'m5-business',
   'm6':'m6-components','Module 3: Basic building blocks of electronics':'m6-components',
@@ -1352,9 +1354,9 @@ function _freshJoinerState(){
     sections: _getMasterSections(),
     milestones: [
       {id:'ms1',title:'Week 1 — Company orientation complete',sub:'Elecbits overview, team intros, org structure',status:'in-progress'},
-      {id:'ms2',title:'Industry foundation complete',sub:'9 modules — unlocks departmental training',status:'locked'},
-      {id:'ms3',title:'Department onboarding complete',sub:'All 7 chapters — team, flow, access, tools, resources, first tasks',status:'locked'},
-      {id:'ms4',title:'Full onboarding complete',sub:'All sections done',status:'locked'},
+      {id:'ms2',title:'Industry foundation complete',sub:'9 modules — unlocks departmental training',status:'not-started'},
+      {id:'ms3',title:'Department onboarding complete',sub:'All 7 chapters — team, flow, access, tools, resources, first tasks',status:'not-started'},
+      {id:'ms4',title:'Full onboarding complete',sub:'All sections done',status:'not-started'},
     ],
     reflections: [],
     quizAnswers: {}
@@ -4694,6 +4696,21 @@ function openSession(id){
         var allDocs=masterDocs.concat(deptDocs.filter(function(sd){
           return !masterDocs.find(function(d){return d.filename===sd.filename&&d.date===sd.date;});
         }));
+        // SUPABASE: also load from DB (cross-device docs)
+        if(window._supaReady){
+          sbLoadDocs(modId, sessDept).then(function(dbDocs){
+            if(dbDocs && dbDocs.length){
+              dbDocs.forEach(function(dd){
+                var already=allDocs.find(function(d){ return d.filename===dd.filename; });
+                if(!already) allDocs.push(dd);
+              });
+            }
+            // Re-render banner with DB docs included
+            var oldBanner2=el.querySelector('#session-docs-banner');
+            if(oldBanner2) oldBanner2.remove();
+            if(allDocs.length) _injectDocsBanner(el, allDocs);
+          }).catch(function(){});
+        }
         // Remove old banner if exists
         var oldBanner=el.querySelector('#session-docs-banner');
         if(oldBanner) oldBanner.remove();
@@ -4750,6 +4767,20 @@ function _injectDeptLabel(){
   ).forEach(function(el){ el.textContent = dept; });
 }
 // Show/hide PM process section based on dept
+function _injectDocsBanner(el, docs){
+  var banner=document.createElement('div');
+  banner.id='session-docs-banner';
+  banner.style.cssText='background:rgba(61,111,232,.1);border-bottom:1px solid rgba(61,111,232,.2);padding:12px 28px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
+  var btns=docs.map(function(d){
+    if(!d.data) return '';
+    return '<button onclick="(function(){var a=document.createElement(\'a\');a.href=\''+d.data+'\';a.download=\''+d.filename+'\';a.click();})()" '
+      +'style="background:rgba(61,111,232,.2);border:1px solid rgba(61,111,232,.4);border-radius:6px;color:#7ba7ff;padding:5px 12px;font-size:11px;cursor:pointer;font-family:Inter,sans-serif;">⬇ '+d.title+'</button>';
+  }).filter(Boolean).join('');
+  banner.innerHTML='<span style="font-size:12px;font-weight:700;color:#7ba7ff;font-family:monospace;">📎 RESOURCES FOR THIS MODULE</span>'+btns;
+  var topbar=el.querySelector('div[style*="position:sticky"]');
+  if(topbar && topbar.nextSibling) el.insertBefore(banner, topbar.nextSibling);
+  else el.insertBefore(banner, el.firstChild);
+}
 function _showPMSection(){
   var dept=(window.S&&S.user&&S.user.dept)?S.user.dept:'';
   var el=document.getElementById('pm-process-section');
