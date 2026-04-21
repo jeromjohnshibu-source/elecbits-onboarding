@@ -2601,7 +2601,7 @@ viewRenderers['lead-members']=el=>{
             <td style="display:flex;gap:4px">
               <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">View</button>
               <button class="btn ghost xs" onclick="editPerson(${p.id})">Edit</button>
-              <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
+              <button class="btn ghost xs" style="color:var(--red,#ef4444);border-color:rgba(239,68,68,.35)" onclick="removePerson(${p.id})">Delete</button>
             </td>
           </tr>`).join('')
           :'<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No team members yet. Click "+ Add Joiner".</td></tr>'}
