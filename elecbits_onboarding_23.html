@@ -1127,8 +1127,9 @@ async function sbSaveDoc(moduleId, dept, docObj) {
       uploaded_at: new Date().toISOString()
     });
     console.log('✓ Doc saved to Supabase Storage:', fileUrl);
+    console.log('✓ Doc saved to documents table for module:', moduleId, 'dept:', dept);
   } catch(e) {
-    console.error('sbSaveDoc error:', e);
+    console.error('[SAVE DOC ERROR]', e.message || e);
   }
 }
 
@@ -1137,7 +1138,9 @@ async function sbLoadDocs(moduleId, dept) {
   // Clean dept — remove spaces
   const cleanDept = dept ? dept.replace(/\s+/g,'') : 'All';
   const filter = 'module_id=eq.'+moduleId+'&dept=in.('+cleanDept+',All)';
+  console.log('[LOAD DOCS] Supabase filter:', filter);
   const rows = await sbGet('documents', filter);
+  console.log('[LOAD DOCS] Raw rows returned:', rows ? rows.length : 'null/error');
   if (!rows) return [];
   return rows.map(r => ({
     title: r.title,
@@ -1184,7 +1187,11 @@ console.log('✓ Supabase connected:', SUPA_URL);
 // v16 — all modules unlocked
 const _SV='eb16_';
 const LS=k=>{try{return JSON.parse(localStorage.getItem(_SV+k))}catch{return null}};
-const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){console.warn('Storage unavailable:',e);}};
+const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
+  if(e.name==='QuotaExceededError'||e.code===22){
+    console.error('localStorage QUOTA EXCEEDED for key:',k,'— file data too large, use Supabase Storage');
+  } else { console.warn('Storage unavailable:',e); }
+}};
 // Wipe ALL previous eb_ versioned keys so stale data never loads
 (function(){try{Object.keys(localStorage).filter(k=>/^eb([1-9]|1[0-5])_/.test(k)).forEach(k=>localStorage.removeItem(k));}catch(e){}})();
 
@@ -1363,7 +1370,24 @@ function save(){
   // Ensure all people have onboardStatus
   S.people.forEach(p=>{ if(!p.onboardStatus) p.onboardStatus='New joiner'; });
   if(!S.users) S.users=[];
-  SS('state', S);
+  // Strip large base64 file data before saving to localStorage
+  try{
+    var stateClean = JSON.parse(JSON.stringify(S));
+    if(stateClean.sections){
+      stateClean.sections.forEach(function(sec){
+        sec.modules.forEach(function(m){
+          if(m.docs && m.docs.length){
+            m.docs = m.docs.map(function(d){
+              return { title:d.title, filename:d.filename, ext:d.ext,
+                       size:d.size, date:d.date, mime:d.mime,
+                       file_url:d.file_url||null, id:d.id||null };
+            });
+          }
+        });
+      });
+    }
+    SS('state', stateClean);
+  }catch(e){ console.warn('save() strip error:', e); SS('state', S); }
   if(S.user && S.user.role==='joiner') _saveJoinerState(S.user.email);
   else if(S.user && (S.user.role==='admin'||S.user.role==='lead')){
     _backupMasterState();
@@ -1554,8 +1578,21 @@ function _restoreAdminState(){
 }
 
 function _backupMasterState(){
-  // Save admin's clean module template so it survives joiner sessions
-  SS('master_state', { sections: S.sections, milestones: S.milestones });
+  // Strip large file data before saving to localStorage (base64 causes QuotaExceededError)
+  var sectionsClean = JSON.parse(JSON.stringify(S.sections));
+  sectionsClean.forEach(function(sec){
+    sec.modules.forEach(function(m){
+      if(m.docs && m.docs.length){
+        m.docs = m.docs.map(function(d){
+          return { title:d.title, filename:d.filename, ext:d.ext,
+                   size:d.size, date:d.date, mime:d.mime,
+                   file_url:d.file_url||null, id:d.id||null };
+          // data (base64) intentionally stripped — lives in Supabase Storage
+        });
+      }
+    });
+  });
+  SS('master_state', { sections: sectionsClean, milestones: S.milestones });
 }
 
 // ══════════════════════════════════════════════
@@ -3542,12 +3579,27 @@ function renderModuleDocs(mod){
   // SUPABASE: load docs from DB, merge with local
   if(window._supaReady){
     var dept2=(window.S&&S.user&&S.user.dept)||'All';
-    sbLoadDocs(mod.id, dept2).then(function(dbDocs){
+    var dept2clean=dept2.replace(/\s+/g,'');
+    console.log('[DOCS] Loading module:',mod.id,'dept:',dept2clean);
+    sbLoadDocs(mod.id, dept2clean).then(function(dbDocs){
+      console.log('[DOCS] Supabase returned:',dbDocs?dbDocs.length:'null','docs');
       if(dbDocs && dbDocs.length){
         if(!mod.docs) mod.docs=[];
         dbDocs.forEach(function(dd){
-          var already=mod.docs.find(function(d){ return d.filename===dd.filename&&d.date===dd.date; });
-          if(!already) mod.docs.push(dd);
+          // Check if we already have this doc (by filename)
+          var existing=mod.docs.find(function(d){ return d.filename===dd.filename; });
+          if(existing){
+            // Update with fresh URL from Supabase
+            existing.data = dd.data || existing.data;
+            existing.isUrl = dd.isUrl || existing.isUrl;
+            existing.file_url = dd.file_url || existing.file_url;
+          } else {
+            mod.docs.push(dd);
+          }
+        });
+        // Remove placeholder docs that have no data and are now in DB
+        mod.docs = mod.docs.filter(function(d){
+          return d.data || dbDocs.find(function(dd){ return dd.filename===d.filename; });
         });
       }
       _renderDocsInner(mod, docsEl, uploadEl);
@@ -3558,19 +3610,30 @@ function renderModuleDocs(mod){
 }
 function _renderDocsInner(mod, docsEl, uploadEl){
   const docs=mod.docs||[];
-  docsEl.innerHTML=docs.length?docs.map((d,i)=>`<div class="doc-card">
-    <div class="doc-thumb">${fIcon(d.ext||'pdf')}</div>
-    <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:var(--text)">${d.title}</div>
-    <div class="muted" style="margin-top:2px">Uploaded ${d.date} · ${d.size||''}</div></div>
-    <div style="display:flex;gap:6px">
-      ${d.data?(d.isUrl?
-        `<button class="btn outline xs" onclick="window.open('${d.data}','_blank')">👁 View</button>
-         <a href="${d.data}" download="${d.filename}" class="btn outline xs" style="text-decoration:none;">⬇ Download</a>`
-        :`<button class="btn outline xs" onclick="(function(){var w=window.open();w.document.write('<iframe src=\\''+d.data+'\\' style=\\'width:100%;height:100vh;border:0\\'></iframe>');w.document.close();})();">👁 View</button>
-         <button class="btn outline xs" onclick="(function(){var a=document.createElement('a');a.href='${d.data}';a.download='${d.filename}';a.click();})();">⬇ Download</button>`):''}
-      ${S.user?.role==='admin'||S.user?.role==='lead'?`<button class="btn ghost xs" onclick="removeModuleDoc('${mod.id}',${i})">✕</button>`:''}
-    </div>
-  </div>`).join('')
+  docsEl.innerHTML=docs.length?docs.map((d,i)=>{
+    var viewBtn='';
+    if(d.data){
+      if(d.isUrl||d.data.startsWith('http')){
+        viewBtn=`<button class="btn outline xs" onclick="window.open('${d.data}','_blank')">👁 View</button>
+                 <a href="${d.data}" download="${d.filename}" class="btn outline xs" style="text-decoration:none;display:inline-flex;align-items:center;padding:4px 8px;">⬇ Download</a>`;
+      } else {
+        viewBtn=`<button class="btn outline xs" onclick="(function(){var w=window.open();w.document.write('<iframe src=\''+d.data+'\' style=\'width:100%;height:100vh;border:0\'></iframe>');w.document.close();})()">👁 View</button>
+                 <button class="btn outline xs" onclick="(function(){var a=document.createElement('a');a.href='${d.data}';a.download='${d.filename}';a.click()})()">⬇ Download</button>`;
+      }
+    } else {
+      // No data yet — show loading state, Supabase will populate on next render
+      viewBtn='<span class="muted" style="font-size:11px;">⏳ Loading...</span>';
+    }
+    var delBtn=(S.user?.role==='admin'||S.user?.role==='lead')?`<button class="btn ghost xs" onclick="removeModuleDoc('${mod.id}',${i})">✕</button>`:'';
+    return `<div class="doc-card">
+      <div class="doc-thumb">${fIcon(d.ext||'pdf')}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${d.title}</div>
+        <div class="muted" style="margin-top:2px">Uploaded ${d.date} · ${d.size||''}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">${viewBtn}${delBtn}</div>
+    </div>`;
+  }).join('')
   :'<div class="muted" style="padding:20px;text-align:center">No documents uploaded for this module yet.</div>';
 
   // Upload section for admin/lead
@@ -3614,7 +3677,10 @@ function uploadModuleDoc(mid){
       try{ localStorage.setItem(docsKey, JSON.stringify(deptDocs)); }catch(e){}
       // SUPABASE: save to DB so all devices see it
       if(window._supaReady){
-        sbSaveDoc(mid, dept, docObj).catch(function(e){ console.warn('sbSaveDoc error:',e); });
+        sbSaveDoc(mid, dept, docObj).then(function(result){
+          // After successful storage upload, renderModuleDocs again to show the URL-based doc
+          renderModuleDocs(mod);
+        }).catch(function(e){ console.warn('sbSaveDoc error:',e); });
       }
     }catch(e){}
     save();
