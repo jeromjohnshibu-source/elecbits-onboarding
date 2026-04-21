@@ -1078,56 +1078,27 @@ async function sbLoadAllModuleMeta() {
 // ── DOCUMENTS: upload a doc ──
 async function sbSaveDoc(moduleId, dept, docObj) {
   try {
-    const fileData = docObj.data || null;
-    // Check file size — base64 inflates by ~33%
-    const approxBytes = fileData ? Math.round(fileData.length * 0.75) : 0;
-    console.log('[UPLOAD] File size:', Math.round(approxBytes/1024), 'KB');
-
-    if(approxBytes > 800000) {
-      // File > 800KB — use Storage bucket
-      console.log('[UPLOAD] Large file — using Storage bucket');
-      await sbSaveDocStorage(moduleId, dept, docObj);
-      return;
-    }
-
-    // Small file — save base64 directly to table
-    const result = await sbPost('documents', {
-      module_id: moduleId, dept: dept,
-      title: docObj.title, filename: docObj.filename,
-      file_data: fileData, file_url: null,
-      mime_type: docObj.mime || 'application/octet-stream',
-      file_size: docObj.size || '',
-      uploaded_by: (S.user && S.user.email) || '',
-      uploaded_at: new Date().toISOString()
-    });
-    if(result && result.length) {
-      console.log('✓ Doc saved directly to Supabase table');
-    } else {
-      console.warn('Direct save failed, trying Storage...');
-      await sbSaveDocStorage(moduleId, dept, docObj);
-    }
-  } catch(e) {
-    console.error('[SAVE DOC ERROR]', e.message || e);
-    toast('Upload failed: ' + (e.message || 'Unknown error'));
-  }
-}
-
-async function sbSaveDocStorage(moduleId, dept, docObj) {
-  try {
+    console.log('[UPLOAD] Starting upload for module:', moduleId, 'dept:', dept);
+    
+    // Always use Storage — works for any file size
     const filePath = moduleId + '/' + dept + '/' + Date.now() + '_' + docObj.filename;
     const base64 = docObj.data.includes(',') ? docObj.data.split(',')[1] : docObj.data;
+    
+    // Convert base64 to binary blob
     const byteChars = atob(base64);
     const byteArr = new Uint8Array(byteChars.length);
     for(let j=0; j<byteChars.length; j++) byteArr[j] = byteChars.charCodeAt(j);
     const blob = new Blob([byteArr], {type: docObj.mime||'application/octet-stream'});
-
+    
+    console.log('[UPLOAD] Uploading to Storage, size:', Math.round(blob.size/1024), 'KB');
+    
     const storageRes = await fetch(
-      SUPA_URL + '/storage/v1/object/documents/' + filePath,
+      'https://yrumjtzhwlyajmneaxco.supabase.co/storage/v1/object/documents/' + filePath,
       {
         method: 'POST',
         headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': 'Bearer ' + SUPA_KEY,
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlydW1qdHpod2x5YWptbmVheGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODI2MDIsImV4cCI6MjA5MjI1ODYwMn0.Iakq3Jdu2UbSpNsaXhJeBeq1k7Xa0XdrdhWOMSaJL6U',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlydW1qdHpod2x5YWptbmVheGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODI2MDIsImV4cCI6MjA5MjI1ODYwMn0.Iakq3Jdu2UbSpNsaXhJeBeq1k7Xa0XdrdhWOMSaJL6U',
           'Content-Type': docObj.mime || 'application/octet-stream',
           'x-upsert': 'true'
         },
@@ -1138,24 +1109,43 @@ async function sbSaveDocStorage(moduleId, dept, docObj) {
     if(!storageRes.ok) {
       const errText = await storageRes.text();
       console.error('[STORAGE ERROR]', storageRes.status, errText);
-      toast('Upload failed (' + storageRes.status + '). Check Storage bucket exists and is public.');
+      // If Storage fails, save metadata only so at least the title shows
+      await sbPost('documents', {
+        module_id: moduleId, dept: dept,
+        title: docObj.title, filename: docObj.filename,
+        file_data: null, file_url: null,
+        mime_type: docObj.mime||'application/octet-stream',
+        file_size: docObj.size||'',
+        uploaded_by: (S.user&&S.user.email)||'',
+        uploaded_at: new Date().toISOString()
+      });
+      toast('File saved (no preview available — check Storage bucket settings)');
       return;
     }
 
-    const fileUrl = SUPA_URL + '/storage/v1/object/public/documents/' + filePath;
-    await sbPost('documents', {
+    // Get public URL
+    const fileUrl = 'https://yrumjtzhwlyajmneaxco.supabase.co/storage/v1/object/public/documents/' + filePath;
+    console.log('[UPLOAD] Storage success, URL:', fileUrl);
+
+    // Save URL to documents table
+    const dbResult = await sbPost('documents', {
       module_id: moduleId, dept: dept,
       title: docObj.title, filename: docObj.filename,
       file_data: fileUrl, file_url: fileUrl,
-      mime_type: docObj.mime || 'application/octet-stream',
-      file_size: docObj.size || '',
-      uploaded_by: (S.user && S.user.email) || '',
+      mime_type: docObj.mime||'application/octet-stream',
+      file_size: docObj.size||'',
+      uploaded_by: (S.user&&S.user.email)||'',
       uploaded_at: new Date().toISOString()
     });
-    console.log('✓ Doc saved via Storage:', fileUrl);
+    
+    if(dbResult && dbResult.length) {
+      console.log('✓ Doc fully saved — Storage + DB record created');
+    } else {
+      console.warn('[UPLOAD] DB record may have failed — check Supabase documents table');
+    }
   } catch(e) {
-    console.error('[STORAGE UPLOAD ERROR]', e.message || e);
-    toast('Upload failed: ' + (e.message||'Check internet connection'));
+    console.error('[UPLOAD ERROR]', e.message||e);
+    toast('Upload error: ' + (e.message||'Check your internet connection'));
   }
 }
 
