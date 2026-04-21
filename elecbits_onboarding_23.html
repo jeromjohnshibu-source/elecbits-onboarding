@@ -1560,6 +1560,9 @@ function _loadJoinerState(email){
   S.reflections = js.reflections || [];
   S.quizAnswers = js.quizAnswers || {};
 
+  // Apply sequential unlock on load so any completed modules unlock the next one
+  autoUnlock();
+
   // SUPABASE: overlay DB progress on top of local state (DB is source of truth)
   if(window._supaReady && window.S && S.user){
     sbLoadProgress(S.user.email).then(function(progressMap){
@@ -3233,21 +3236,13 @@ function changeModSt(sid,mid,st){
   if(m){m.status=st;save();autoUnlock();toast('Status updated');}
 }
 function autoUnlock(){
-  // For each section, if all non-locked modules are done → unlock first module of next section
-  S.sections.forEach((sec,si)=>{
-    const activeMods=sec.modules.filter(m=>m.status!=='locked');
-    const allDone=activeMods.length>0&&activeMods.every(m=>m.status==='done');
-    if(allDone&&si+1<S.sections.length){
-      const next=S.sections[si+1];
-      // unlock first module if still locked
-      if(next.modules.length&&next.modules[0].status==='locked'){
-        next.modules[0].status='not-started';
-        // unlock rest of section too
-        next.modules.forEach(m=>{if(m.status==='locked')m.status='not-started';});
-        save();toast('Section "'+next.title.split('—')[0].trim()+'" unlocked ✓');
-      }
+  // Sequential unlock: when module N is done, unlock module N+1
+  const allMods=S.sections.flatMap(s=>s.modules);
+  for(let i=1;i<allMods.length;i++){
+    if(allMods[i].status==='locked'&&allMods[i-1].status==='done'){
+      allMods[i].status='not-started';
     }
-  });
+  }
   _syncJoinerProgress();
 }
 
