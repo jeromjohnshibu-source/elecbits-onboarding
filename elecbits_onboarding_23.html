@@ -2977,7 +2977,7 @@ function markModuleProgress(){
   if(!_curMod||_curMod.status==='done')return;
   _curMod.status='done';
   _syncJoinerProgress();
-  save(); autoUnlock();
+  autoUnlock();
   closeModal('modal-module'); toast('Module marked complete ✓');
   const active=document.querySelector('.sb-item.active');
   if(active) showContent(active.dataset.view||'modules');
@@ -3259,6 +3259,7 @@ function autoUnlock(){
     }
   }
   _syncJoinerProgress();
+  save();
 }
 
 // Sync the logged-in joiner's real module progress back to S.people
@@ -4248,19 +4249,23 @@ function saveUser(){
 
   if(!S.users) S.users=[];
 
+  var userRecord;
   if(id){
     // Edit existing
     var u = S.users.find(function(x){ return x.id===parseInt(id); });
-    if(u){ u.name=name;u.email=email;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active; }
+    if(u){ u.name=name;u.email=email;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active; userRecord=u; }
   } else {
     // Check duplicate email
     if(S.users.find(function(x){ return x.email===email; })){ alert('A user with this email already exists.'); return; }
-    S.users.push({ id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) });
+    userRecord = { id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) };
+    S.users.push(userRecord);
     // Also add to people list if joiner
     if(role==='joiner' && !S.people.find(function(p){ return p.email===email; })){
       S.people.push({ id:Date.now()+1, name:name, email:email, role:desig||'Team Member', dept:dept, track:'Fresher', mgr:mgr, day:1, progress:0, status:'New joiner', onboardStatus:'New joiner' });
     }
   }
+  // SUPABASE: sync user credentials so they can log in from any device
+  if(userRecord && window._supaReady){ sbSaveUser(userRecord).catch(function(e){ console.warn('sbSaveUser error:',e); }); }
   save();
   closeModal('modal-add-user');
   navTo('admin-users');
