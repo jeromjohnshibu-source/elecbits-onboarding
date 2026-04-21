@@ -1193,7 +1193,22 @@ const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
   } else { console.warn('Storage unavailable:',e); }
 }};
 // Wipe ALL previous eb_ versioned keys so stale data never loads
-(function(){try{Object.keys(localStorage).filter(k=>/^eb([1-9]|1[0-5])_/.test(k)).forEach(k=>localStorage.removeItem(k));}catch(e){}})();
+(function(){
+  try{
+    // Remove all old eb_ versioned keys
+    Object.keys(localStorage).filter(k=>/^eb([1-9]|1[0-5])_/.test(k)).forEach(k=>localStorage.removeItem(k));
+    // Also remove any oversized base64 doc keys from any version
+    Object.keys(localStorage).filter(k=>k.includes('docs_')||k.includes('DOCS_')).forEach(function(k){
+      try{
+        var val = localStorage.getItem(k);
+        if(val && val.length > 100000){ // > 100KB = definitely base64 file data
+          localStorage.removeItem(k);
+          console.log('Cleared oversized key:', k);
+        }
+      }catch(e){}
+    });
+  }catch(e){}
+})();
 
 let S = LS('state') || {
   user: null,
@@ -1507,8 +1522,14 @@ function _loadJoinerState(email){
       master2.forEach(function(sec){
         sec.modules.forEach(function(m){
           if(savedMap2[m.id]){
-            m.status = savedMap2[m.id].status;
-            m.note   = savedMap2[m.id].note;
+            var savedStatus = savedMap2[m.id].status;
+            // Never apply locked from saved state if module is now unlocked
+            if(savedStatus === 'locked' && m.status !== 'locked'){
+              // Keep unlocked — admin has since unlocked this module
+            } else {
+              m.status = savedStatus;
+            }
+            m.note = savedMap2[m.id].note;
           }
         });
       });
@@ -1528,7 +1549,14 @@ function _loadJoinerState(email){
       S.sections.forEach(function(sec){
         sec.modules.forEach(function(m){
           if(progressMap[m.id]){
-            m.status = progressMap[m.id].status || m.status;
+            var dbStatus = progressMap[m.id].status;
+            // Never apply 'locked' from DB if the module is now unlocked in code
+            // This handles cases where admin unlocks a module after joiner already has progress
+            if(dbStatus === 'locked' && m.status !== 'locked'){
+              // Module was unlocked in code — keep it unlocked, ignore DB locked status
+            } else {
+              m.status = dbStatus || m.status;
+            }
             if(progressMap[m.id].note) m.note = progressMap[m.id].note;
           }
         });
@@ -3662,32 +3690,39 @@ function uploadModuleDoc(mid){
     const docObj={title:title||f.name,filename:f.name,ext:f.name.split('.').pop().toLowerCase(),
                   size:fmtSz(f.size),date:new Date().toLocaleDateString('en-IN'),
                   data:e.target.result,mime:f.type||'application/octet-stream'};
-    mod.docs.push(docObj);
-    // Write to dept-scoped shared key so only same-dept joiners see it
-    try{
-      // Use section dept to determine scoping — common modules use 'All'
-      var modSec=null;
-      S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec=s; }); });
-      var isCommon = modSec && (modSec.dept==='all'||modSec.dept==='All');
-      var dept = isCommon ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
-      var docsKey='ebDOCS_'+dept+'_'+mid;
-      var deptDocs;
-      try{ deptDocs=JSON.parse(localStorage.getItem(docsKey))||[]; }catch(e){ deptDocs=[]; }
-      deptDocs.push(docObj);
-      try{ localStorage.setItem(docsKey, JSON.stringify(deptDocs)); }catch(e){}
-      // SUPABASE: save to DB so all devices see it
-      if(window._supaReady){
-        sbSaveDoc(mid, dept, docObj).then(function(result){
-          // After successful storage upload, renderModuleDocs again to show the URL-based doc
-          renderModuleDocs(mod);
-        }).catch(function(e){ console.warn('sbSaveDoc error:',e); });
-      }
-    }catch(e){}
-    save();
-    renderModuleDocs(mod);
-    document.getElementById('doc-title-inp').value='';
-    fi.value='';
-    toast('Document uploaded ✓');
+    // Determine dept scope
+    var modSec=null;
+    S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec=s; }); });
+    var isCommon = modSec && (modSec.dept==='all'||modSec.dept==='All');
+    var dept = isCommon ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
+
+    // Show uploading state immediately
+    toast('Uploading...');
+
+    // SUPABASE ONLY — no localStorage for file data (prevents QuotaExceededError)
+    if(window._supaReady){
+      sbSaveDoc(mid, dept, docObj).then(function(){
+        // After Supabase save, add a lightweight reference to mod.docs (URL only, no base64)
+        if(!mod.docs) mod.docs=[];
+        mod.docs.push({
+          title:docObj.title, filename:docObj.filename, ext:docObj.ext,
+          size:docObj.size, date:docObj.date, mime:docObj.mime,
+          data: null // data comes from Supabase on next load
+        });
+        renderModuleDocs(mod);
+        document.getElementById('doc-title-inp').value='';
+        fi.value='';
+        toast('Document uploaded ✓');
+      }).catch(function(e){
+        console.error('Upload failed:', e);
+        toast('Upload failed — please try again');
+      });
+    } else {
+      // No Supabase — show warning
+      toast('Database not connected — upload unavailable');
+      document.getElementById('doc-title-inp').value='';
+      fi.value='';
+    }
   };
   reader.readAsDataURL(f);
 }
@@ -6866,7 +6901,7 @@ function Flowchart() {
   );
 }
 
-ReactDOM.render(React.createElement(Flowchart), document.getElementById('root'));
+
 
     // Mount into the container instead of body
     const container = document.getElementById('eb-flowchart-root');
