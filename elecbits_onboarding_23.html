@@ -1337,7 +1337,7 @@ const _SECTION_TEMPLATE = (function(){
   // Deep-clone S.sections BUT force all statuses to locked/not-started
   return JSON.parse(JSON.stringify(S.sections)).map(function(sec, si){
     sec.modules = sec.modules.map(function(m, mi){
-      m.status = (si === 0 && mi === 0) ? 'not-started' : 'locked';
+      m.status = 'not-started';
       m.note = '';
       return m;
     });
