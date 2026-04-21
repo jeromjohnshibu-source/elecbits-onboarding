@@ -1177,17 +1177,6 @@ async function sbSavePerson(person) {
   }
 }
 
-async function sbSaveUser(user) {
-  if (user.email) {
-    await sbUpsert('users', {
-      name: user.name, email: user.email, password: user.password,
-      role: user.role||'joiner', dept: user.dept||'',
-      designation: user.designation||'', mgr: user.mgr||'',
-      active: true
-    });
-  }
-}
-
 // Flag that Supabase is ready
 window._supaReady = true;
 console.log('✓ Supabase connected:', SUPA_URL);
@@ -1337,7 +1326,7 @@ const _SECTION_TEMPLATE = (function(){
   // Deep-clone S.sections BUT force all statuses to locked/not-started
   return JSON.parse(JSON.stringify(S.sections)).map(function(sec, si){
     sec.modules = sec.modules.map(function(m, mi){
-      m.status = 'not-started';
+      m.status = (si === 0 && mi === 0) ? 'not-started' : 'locked';
       m.note = '';
       return m;
     });
@@ -1570,9 +1559,6 @@ function _loadJoinerState(email){
   S.milestones  = js.milestones  || fresh.milestones;
   S.reflections = js.reflections || [];
   S.quizAnswers = js.quizAnswers || {};
-
-  // Apply sequential unlock on load so any completed modules unlock the next one
-  autoUnlock();
 
   // SUPABASE: overlay DB progress on top of local state (DB is source of truth)
   if(window._supaReady && window.S && S.user){
@@ -2337,9 +2323,8 @@ viewRenderers['admin-people']=el=>{
         <td class="muted">${p.mgr||'—'}</td>
         <td><span class="chip ${chipCol(p.onboardStatus||p.status)}">${p.onboardStatus||p.status}</span></td>
         <td style="display:flex;gap:4px">
-          <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">View</button>
           <button class="btn outline xs" onclick="editPerson(${p.id})">Edit</button>
-          <button class="btn ghost xs" style="color:var(--red,#ef4444);border-color:rgba(239,68,68,.35)" onclick="removePerson(${p.id})">Delete</button>
+          <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
         </td>
       </tr>`).join('')}</tbody>
     </table>
@@ -2615,7 +2600,7 @@ viewRenderers['lead-members']=el=>{
             <td style="display:flex;gap:4px">
               <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">View</button>
               <button class="btn ghost xs" onclick="editPerson(${p.id})">Edit</button>
-              <button class="btn ghost xs" style="color:var(--red,#ef4444);border-color:rgba(239,68,68,.35)" onclick="removePerson(${p.id})">Delete</button>
+              <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
             </td>
           </tr>`).join('')
           :'<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No team members yet. Click "+ Add Joiner".</td></tr>'}
@@ -2977,7 +2962,7 @@ function markModuleProgress(){
   if(!_curMod||_curMod.status==='done')return;
   _curMod.status='done';
   _syncJoinerProgress();
-  autoUnlock();
+  save(); autoUnlock();
   closeModal('modal-module'); toast('Module marked complete ✓');
   const active=document.querySelector('.sb-item.active');
   if(active) showContent(active.dataset.view||'modules');
@@ -3152,11 +3137,7 @@ function addPerson(){
   if(!S.users.find(function(u){ return u.email.toLowerCase()===emailLower; })){
     var words=['launch','build','ship','code','make','grow','lead','spark','start','craft'];
     var randPw = words[Math.floor(Math.random()*words.length)] + Math.floor(Math.random()*900+100);
-    var newUser={id:newPersonId+1,name:n,email:emailLower,password:randPw,role:'joiner',dept:newDept,designation:document.getElementById('np-role').value||'Team Member',mgr:document.getElementById('np-mgr').value,active:true,mustChangePassword:true,createdAt:new Date().toISOString().slice(0,10)};
-    S.users.push(newUser);
-    // SUPABASE: save user credentials so joiner can log in from any device/incognito
-    if(window._supaReady){ sbSaveUser(newUser).catch(function(e){ console.warn('sbSaveUser error:',e); }); }
-    if(window._supaReady){ sbSavePerson({name:n,email:emailLower,role:'joiner',dept:newDept,designation:newUser.designation,mgr:newUser.mgr}).catch(function(e){ console.warn('sbSavePerson error:',e); }); }
+    S.users.push({id:newPersonId+1,name:n,email:emailLower,password:randPw,role:'joiner',dept:newDept,designation:document.getElementById('np-role').value||'Team Member',mgr:document.getElementById('np-mgr').value,active:true,mustChangePassword:true,createdAt:new Date().toISOString().slice(0,10)});
     // Show credentials in a clear modal instead of a disappearing toast
     setTimeout(function(){
       var msg = '✅ Joiner added successfully!\n\n'
@@ -3251,15 +3232,14 @@ function changeModSt(sid,mid,st){
   if(m){m.status=st;save();autoUnlock();toast('Status updated');}
 }
 function autoUnlock(){
-  // Sequential unlock: when module N is done, unlock module N+1
-  const allMods=S.sections.flatMap(s=>s.modules);
-  for(let i=1;i<allMods.length;i++){
-    if(allMods[i].status==='locked'&&allMods[i-1].status==='done'){
-      allMods[i].status='not-started';
-    }
-  }
+  // All modules are always unlocked — just sync progress
+  // Unlock any remaining locked modules (safety net)
+  S.sections.forEach(function(sec){
+    sec.modules.forEach(function(m){
+      if(m.status==='locked') m.status='not-started';
+    });
+  });
   _syncJoinerProgress();
-  save();
 }
 
 // Sync the logged-in joiner's real module progress back to S.people
@@ -3610,10 +3590,9 @@ function openJoinerDetail(id){
           </div>`;
         }).join('')}
       </div>`).join('')}
-    <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+    <div style="display:flex;gap:8px;margin-top:4px">
       ${isComplete?`<button class="btn primary sm" onclick="toast('Project assignment email sent to ${p.name} ✓');closeModal('modal-joiner-detail')">📧 Assign Project</button>`:''}
       <button class="btn ghost sm" onclick="toast('Nudge sent to ${p.name} ✓')">📨 Send Nudge</button>
-      <button class="btn ghost sm" style="margin-left:auto;color:var(--red,#ef4444);border-color:rgba(239,68,68,.35)" onclick="if(!confirm('Delete ${p.name}? This cannot be undone.'))return;S.people=S.people.filter(x=>x.id!==${p.id});save();closeModal('modal-joiner-detail');navTo(S.user?.role==='lead'?'lead-view':'admin-people');toast('Joiner deleted')">🗑 Delete Joiner</button>
     </div>`;
   openModal('modal-joiner-detail');
 }
@@ -4249,23 +4228,19 @@ function saveUser(){
 
   if(!S.users) S.users=[];
 
-  var userRecord;
   if(id){
     // Edit existing
     var u = S.users.find(function(x){ return x.id===parseInt(id); });
-    if(u){ u.name=name;u.email=email;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active; userRecord=u; }
+    if(u){ u.name=name;u.email=email;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active; }
   } else {
     // Check duplicate email
     if(S.users.find(function(x){ return x.email===email; })){ alert('A user with this email already exists.'); return; }
-    userRecord = { id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) };
-    S.users.push(userRecord);
+    S.users.push({ id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) });
     // Also add to people list if joiner
     if(role==='joiner' && !S.people.find(function(p){ return p.email===email; })){
       S.people.push({ id:Date.now()+1, name:name, email:email, role:desig||'Team Member', dept:dept, track:'Fresher', mgr:mgr, day:1, progress:0, status:'New joiner', onboardStatus:'New joiner' });
     }
   }
-  // SUPABASE: sync user credentials so they can log in from any device
-  if(userRecord && window._supaReady){ sbSaveUser(userRecord).catch(function(e){ console.warn('sbSaveUser error:',e); }); }
   save();
   closeModal('modal-add-user');
   navTo('admin-users');
