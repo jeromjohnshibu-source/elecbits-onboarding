@@ -1429,13 +1429,31 @@ function _joinerKey(email){ return 'joiner_' + email.toLowerCase().replace(/[^a-
 // This is the single source of truth for what modules exist.
 // Joiner progress is stored separately per-email.
 function _getMasterSections(){
-  // Prefer admin-saved master_state (contains title/desc/time edits by lead/admin)
-  // Fall back to hardcoded template if no saved state exists
+  // Use master_state for metadata (title/desc/date/host) but ALWAYS reset statuses
+  // so new joiners never inherit completed/in-progress status from admin testing
+  var base = JSON.parse(JSON.stringify(_SECTION_TEMPLATE));
   var saved = LS('master_state');
   if(saved && saved.sections && saved.sections.length){
-    return JSON.parse(JSON.stringify(saved.sections));
+    // Apply only metadata from saved — never apply status
+    saved.sections.forEach(function(savedSec){
+      var baseSec = base.find(function(s){ return s.id === savedSec.id; });
+      if(!baseSec) return;
+      savedSec.modules.forEach(function(savedMod){
+        var baseMod = baseSec.modules.find(function(m){ return m.id === savedMod.id; });
+        if(!baseMod) return;
+        // Apply admin edits (title, desc, time, date, host, prereads, postreads)
+        if(savedMod.title)     baseMod.title     = savedMod.title;
+        if(savedMod.desc)      baseMod.desc      = savedMod.desc;
+        if(savedMod.time)      baseMod.time      = savedMod.time;
+        if(savedMod.date)      baseMod.date      = savedMod.date;
+        if(savedMod.host)      baseMod.host      = savedMod.host;
+        if(savedMod.prereads && savedMod.prereads.length)   baseMod.prereads  = savedMod.prereads;
+        if(savedMod.postreads && savedMod.postreads.length) baseMod.postreads = savedMod.postreads;
+        // NEVER copy status — joiner always starts fresh
+      });
+    });
   }
-  return JSON.parse(JSON.stringify(_SECTION_TEMPLATE));
+  return base;
 }
 
 function _freshJoinerState(){
@@ -3108,6 +3126,12 @@ function addPerson(){
   }
   const newPersonId = Date.now();
   S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner'});
+  // SUPABASE: clear any stale progress for this email so new joiner starts fresh
+  if(window._supaReady){
+    sbDelete('progress', 'joiner_email=eq.'+encodeURIComponent(e.toLowerCase()))
+      .then(function(){ console.log('✓ Cleared stale progress for new joiner:', e); })
+      .catch(function(err){ console.warn('Could not clear progress:', err); });
+  }
   if(!S.users) S.users=[];
   const emailLower = e.toLowerCase();
   if(!S.users.find(function(u){ return u.email.toLowerCase()===emailLower; })){
