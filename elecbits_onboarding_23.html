@@ -2323,6 +2323,7 @@ viewRenderers['admin-people']=el=>{
         <td class="muted">${p.mgr||'—'}</td>
         <td><span class="chip ${chipCol(p.onboardStatus||p.status)}">${p.onboardStatus||p.status}</span></td>
         <td style="display:flex;gap:4px">
+          <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">View</button>
           <button class="btn outline xs" onclick="editPerson(${p.id})">Edit</button>
           <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
         </td>
@@ -3598,9 +3599,10 @@ function openJoinerDetail(id){
           </div>`;
         }).join('')}
       </div>`).join('')}
-    <div style="display:flex;gap:8px;margin-top:4px">
+    <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
       ${isComplete?`<button class="btn primary sm" onclick="toast('Project assignment email sent to ${p.name} ✓');closeModal('modal-joiner-detail')">📧 Assign Project</button>`:''}
       <button class="btn ghost sm" onclick="toast('Nudge sent to ${p.name} ✓')">📨 Send Nudge</button>
+      <button class="btn ghost sm" style="margin-left:auto;color:var(--red,#ef4444);border-color:rgba(239,68,68,.35)" onclick="if(!confirm('Delete ${p.name}? This cannot be undone.'))return;S.people=S.people.filter(x=>x.id!==${p.id});save();closeModal('modal-joiner-detail');navTo(S.user?.role==='lead'?'lead-view':'admin-people');toast('Joiner deleted')">🗑 Delete Joiner</button>
     </div>`;
   openModal('modal-joiner-detail');
 }
