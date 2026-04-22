@@ -831,6 +831,7 @@ to{opacity:1;transform:translateY(0)}}
     <div class="modal-hd"><h3>Add New Joiner</h3><button class="modal-close" onclick="closeModal('modal-add-person')">✕</button></div>
     <div class="fg"><label class="flabel">Full Name</label><input class="finput" id="np-name" placeholder="e.g. Rahul Sharma"/></div>
     <div class="fg"><label class="flabel">Email</label><input class="finput" id="np-email" placeholder="rahul@elecbits.in"/></div>
+    <div class="fg"><label class="flabel">Password</label><input class="finput" id="np-pass" type="password" placeholder="Set a login password" value="pass123"/></div>
     <div class="fg"><label class="flabel">Role / Designation</label><input class="finput" id="np-role" placeholder="e.g. Associate Hardware Engineer"/></div>
     <div class="fg"><label class="flabel">Department</label><select class="fselect" id="np-dept"><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
     <div class="fg"><label class="flabel">Track</label><select class="fselect" id="np-track"><option>Fresher</option><option>Experienced</option></select></div>
@@ -1184,11 +1185,20 @@ async function sbLoadPeople() {
 // ── PEOPLE: save/update a person ──
 async function sbSavePerson(person) {
   if (person.email) {
+    // Save to people table
     await sbUpsert('people', {
       name: person.name, email: person.email, role: person.role||'joiner',
       dept: person.dept, designation: person.designation||'',
       mgr: person.mgr||'', track: person.track||'Full Onboarding',
       day: person.day||1, active: true
+    });
+    // Save to users table so they can log in
+    await sbUpsert('users', {
+      name: person.name, email: person.email,
+      password: person.password||'pass123',
+      role: person.role||'joiner', dept: person.dept||'',
+      designation: person.designation||'', mgr: person.mgr||'',
+      active: true
     });
   }
 }
@@ -2099,7 +2109,7 @@ viewRenderers['modules']=el=>{
     html+=`<div class="slabel">${s.title}</div>`;
     s.modules.forEach(m=>{
       const done=m.status==='done',ip=m.status==='in-progress',locked=false;
-      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" onclick="${'openModuleById(\''+m.id+'\')'}">
+      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" onclick="openModuleById('${m.id}')">
         <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${tIcon(m.type)}</div>
         <div class="mod-meta">
           <div class="mod-name">${m.title}</div>
@@ -3144,10 +3154,26 @@ function addPerson(){
   }
   const newPersonId = Date.now();
   S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner'});
-  // SUPABASE: clear any stale progress for this email so new joiner starts fresh
+  // SUPABASE: save new joiner to both people AND users tables
   if(window._supaReady){
+    var newRole = document.getElementById('np-role').value || 'joiner';
+    var newMgr  = document.getElementById('np-mgr').value || '';
+    var newTrack= document.getElementById('np-track').value || 'Full Onboarding';
+    var newPass = document.getElementById('np-pass') ? document.getElementById('np-pass').value : 'pass123';
+    // Save to people table
+    sbUpsert('people', {
+      name:n, email:e, role:newRole, dept:newDept,
+      designation:document.getElementById('np-desig')?document.getElementById('np-desig').value:'',
+      mgr:newMgr, track:newTrack, day:1, progress:0,
+      onboard_status:'New joiner', active:true
+    }).catch(function(err){ console.warn('people save error:', err); });
+    // Save to users table so they can log in
+    sbUpsert('users', {
+      name:n, email:e, password:newPass, role:newRole,
+      dept:newDept, designation:'', mgr:newMgr, active:true
+    }).catch(function(err){ console.warn('users save error:', err); });
+    // Clear any stale progress
     sbDelete('progress', 'joiner_email=eq.'+encodeURIComponent(e.toLowerCase()))
-      .then(function(){ console.log('✓ Cleared stale progress for new joiner:', e); })
       .catch(function(err){ console.warn('Could not clear progress:', err); });
   }
   if(!S.users) S.users=[];
