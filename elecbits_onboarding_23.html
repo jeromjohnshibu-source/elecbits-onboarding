@@ -2542,9 +2542,9 @@ viewRenderers['admin-feedback']=viewRenderers['lead-feedback']=el=>{
   // Load feedbacks from Supabase and render
   if(window._supaReady){
     var isAdmin = S.user && S.user.role==='admin';
-    var fbFilter = isAdmin ? '' : 
-      'manager_email=eq.'+encodeURIComponent(S.user?.email||'')+'&dept=eq.'+encodeURIComponent((S.user?.dept||'').replace(/\s+/g,''));
-    sbGet('feedbacks', fbFilter).then(function(rows){
+    // Lead sees feedback directed to them (by email) OR from their dept
+    var mgrFilter = 'manager_email=eq.'+encodeURIComponent(S.user?.email||'');
+    sbGet('feedbacks', isAdmin ? '' : mgrFilter).then(function(rows){
       var feedbacks = [];
       if(rows && rows.length){
         feedbacks = rows.map(function(r){
@@ -3485,8 +3485,14 @@ function submitFeedback(){
   const b=document.getElementById('fb-body')?.value.trim();
   if(!b){toast('Please write something');return;}
   const anon=document.getElementById('fb-anon')?.checked;
-  const mgr=S.user?.mgr||'';
+  const mgrName=S.user?.mgr||'';
   const cat=document.getElementById('fb-cat')?.value||'General';
+  // mgr is now stored as email directly — fallback: look up by name
+  var mgrEmail = mgrName.includes('@') ? mgrName : '';
+  if(!mgrEmail && mgrName && S.users){
+    var mgrUser = S.users.find(function(u){ return u.name===mgrName; });
+    if(mgrUser) mgrEmail = mgrUser.email;
+  }
   const fb={
     id:'fb'+Date.now(),
     author:anon?'Anonymous':S.user?.name||'Unknown',
@@ -3496,7 +3502,7 @@ function submitFeedback(){
     body:b,
     category:cat,
     date:new Date().toLocaleDateString('en-IN'),
-    managerEmail:mgr,
+    managerEmail:mgrEmail,
     dept:S.user?.dept||'',
     read:false
   };
@@ -3511,12 +3517,12 @@ function submitFeedback(){
       is_anonymous: anon||false,
       body: b,
       category: cat,
-      manager_email: mgr,
+      manager_email: mgrEmail,
       dept: S.user?.dept||'',
       read: false,
       created_at: new Date().toISOString()
     }).then(function(r){
-      if(r) console.log('✓ Feedback saved to Supabase');
+      if(r) console.log('✓ Feedback saved to Supabase for manager:', mgrEmail);
       else console.warn('Feedback Supabase save returned null');
     }).catch(function(e){ console.warn('Feedback save error:', e); });
   }
@@ -4287,8 +4293,8 @@ function _mgrOptions(selected){
   var managers = S.users.filter(function(u){ return u.role==='lead'||u.role==='admin'; });
   var opts = '<option value="">— Select manager —</option>';
   managers.forEach(function(u){
-    var sel = (selected && selected.toLowerCase()===u.name.toLowerCase()) ? ' selected' : '';
-    opts += '<option value="'+u.name+'"'+sel+'>'+u.name+' ('+u.designation+')</option>';
+    var sel = (selected && (selected.toLowerCase()===u.name.toLowerCase() || selected.toLowerCase()===u.email.toLowerCase())) ? ' selected' : '';
+    opts += '<option value="'+u.email+'"'+sel+'>'+u.name+' ('+u.designation+')</option>';
   });
   return opts;
 }
