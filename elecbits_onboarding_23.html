@@ -1242,6 +1242,7 @@ async function sbSaveDoc(moduleId, dept, docObj) {
     
     if(dbResult && dbResult.length) {
       console.log('✓ Doc fully saved — Storage + DB record created');
+      return dbResult[0]; // callers can capture the new row id for later deletes
     } else {
       console.warn('[UPLOAD] DB record may have failed — check Supabase documents table');
     }
@@ -1249,6 +1250,7 @@ async function sbSaveDoc(moduleId, dept, docObj) {
     console.error('[UPLOAD ERROR]', e.message||e);
     toast('Upload error: ' + (e.message||'Check your internet connection'));
   }
+  return null;
 }
 
 // ── DOCUMENTS: load docs for a module+dept ──
@@ -1276,6 +1278,35 @@ async function sbLoadDocs(moduleId, dept) {
 // ── DOCUMENTS: delete a doc by id ──
 async function sbDeleteDoc(docId) {
   await sbDelete('documents', `id=eq.${docId}`);
+}
+
+// ── DOCUMENTS: push any module docs that live only in localStorage up to Supabase.
+// Admin/lead only — iterates mod.docs and uploads any row that has base64 data but no DB id.
+async function _backfillDocsToSupabase(){
+  if(!window._supaReady || !S.user) return;
+  if(S.user.role !== 'admin' && S.user.role !== 'lead') return;
+  const sections = S.sections || [];
+  for (const sec of sections){
+    const isCommon = sec.dept === 'all' || sec.dept === 'All';
+    const dept = isCommon ? 'All' : String(sec.dept||'All').replace(/\s+/g,'');
+    for (const m of (sec.modules||[])){
+      const docs = m.docs || [];
+      for (const d of docs){
+        // Skip rows that are already in the DB or that have no file data to upload
+        if (d.id) continue;
+        if (!d.data || typeof d.data !== 'string') continue;
+        if (!d.data.startsWith('data:')) continue; // Already a URL — nothing to upload
+        try{
+          const row = await sbSaveDoc(m.id, dept, d);
+          if (row && row.id){
+            d.id = row.id;
+            if (row.file_url){ d.data = row.file_url; d.isUrl = true; }
+          }
+        }catch(e){ console.warn('backfill doc failed:', m.id, d.filename, e); }
+      }
+    }
+  }
+  save();
 }
 
 // ── RESOURCES: upload one file to Storage and insert a `resources` row ──
@@ -2144,6 +2175,10 @@ function doLogin(user){
     sbLoadResources(user).then(function(res){
       if(res){ S.resources=res; save(); if(typeof renderView==='function') try{ renderView(); }catch(e){} }
     }).catch(function(e){ console.warn('sbLoadResources error:',e); });
+  }
+  // SUPABASE: push local-only module docs (from addDocToModule path) up to DB on admin/lead login
+  if((user.role==='admin'||user.role==='lead') && window._supaReady){
+    _backfillDocsToSupabase().catch(function(e){ console.warn('docs backfill error:',e); });
   }
   // SUPABASE: fetch joiner's joining date (people.created_at) for tenure-based unlocks
   if(user.role==='joiner' && window._supaReady){
@@ -3858,12 +3893,13 @@ function addDocToModule(){
                   size:fmtSz(f.size),date:new Date().toLocaleDateString('en-IN'),
                   data:e.target.result, mime:f.type||'application/octet-stream'};
     m.docs.push(docObj);
-    // Write to version-independent key
+    // Determine dept scope once — reused for both localStorage and Supabase
+    var modSec2=null;
+    S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec2=s; }); });
+    var isCommon2 = modSec2 && (modSec2.dept==='all'||modSec2.dept==='All');
+    var dept2 = isCommon2 ? 'All' : (modSec2 ? String(modSec2.dept).replace(/\s+/g,'') : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All'));
+    // Write to version-independent localStorage key (offline cache)
     try{
-      var modSec2=null;
-      S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec2=s; }); });
-      var isCommon2 = modSec2 && (modSec2.dept==='all'||modSec2.dept==='All');
-      var dept2 = isCommon2 ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
       var docsKey2='ebDOCS_'+dept2+'_'+mid;
       var deptDocs2;
       try{ deptDocs2=JSON.parse(localStorage.getItem(docsKey2))||[]; }catch(e2){ deptDocs2=[]; }
@@ -3877,13 +3913,30 @@ function addDocToModule(){
     document.getElementById('em-doc-title').value='';
     fi.value='';
     toast('Document added ✓');
+    // Push to Supabase so the file is visible cross-device. Capture the row id
+    // so a later delete can remove it from the DB too.
+    if(window._supaReady){
+      sbSaveDoc(mid, dept2, docObj).then(function(row){
+        if(row && row.id){
+          docObj.id = row.id;
+          docObj.data = row.file_url || docObj.data;
+          docObj.isUrl = !!row.file_url;
+          save();
+        }
+      }).catch(function(e){ console.warn('sbSaveDoc error:',e); });
+    }
   };
   reader.readAsDataURL(f);
 }
 function removeDocFromModal(idx){
   const mid=document.getElementById('em-mid').value;
   const m=findMod(mid); if(!m||!m.docs) return;
+  const removed=m.docs[idx];
   m.docs.splice(idx,1);
+  // If the doc is backed by a Supabase row, delete it there too
+  if(window._supaReady && removed && removed.id){
+    sbDeleteDoc(removed.id).catch(function(e){ console.warn('sbDeleteDoc error:',e); });
+  }
   // Also remove from shared docs key
   try{
     var rmSec2=null;
