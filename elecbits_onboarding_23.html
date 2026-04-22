@@ -928,6 +928,26 @@ to{opacity:1;transform:translateY(0)}}
   </div>
 </div>
 
+<!-- ══ UPLOAD RESOURCE (admin/lead) ══ -->
+<div class="modal-backdrop" id="modal-add-resource">
+  <div class="modal">
+    <div class="modal-hd"><h3>Upload Resource</h3><button class="modal-close" onclick="closeModal('modal-add-resource')">✕</button></div>
+    <div class="fg"><label class="flabel">Title</label><input class="finput" id="res-title" placeholder="e.g. Hardware style guide"/></div>
+    <div class="fg"><label class="flabel">Department</label><select class="fselect" id="res-dept"><option value="all">All</option><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
+    <div class="fg"><label class="flabel">Description (optional)</label><textarea class="ftextarea" id="res-desc" placeholder="What is this for?"></textarea></div>
+    <div class="fg">
+      <label class="flabel">File</label>
+      <div id="fdz" style="border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)" onclick="document.getElementById('res-file-input').click()">
+        <div style="font-size:24px;margin-bottom:6px">📎</div>
+        <div style="font-size:12px;color:var(--text2)">Click or drop file here</div>
+      </div>
+      <input type="file" id="res-file-input" style="display:none" multiple onchange="handleFSel(event)"/>
+      <div id="sel-files" style="margin-top:8px"></div>
+    </div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-add-resource')">Cancel</button><button class="btn primary" onclick="uploadResources();closeModal('modal-add-resource')">Upload</button></div>
+  </div>
+</div>
+
 <!-- ══ ADD WORKFLOW ══ -->
 <div class="modal-backdrop" id="modal-add-workflow">
   <div class="modal">
@@ -1176,6 +1196,90 @@ async function sbDeleteDoc(docId) {
   await sbDelete('documents', `id=eq.${docId}`);
 }
 
+// ── RESOURCES: upload one file to Storage and insert a `resources` row ──
+// Routing: rows are tagged with dept; joiners/leads filter their dept + 'all'.
+async function sbSaveResource(file, meta) {
+  try {
+    const dept = (meta.dept && String(meta.dept).trim()) || 'All';
+    const deptClean = dept.replace(/\s+/g,'');
+    // Read file to base64, then upload as binary to Storage under a `resources/` prefix.
+    const base64 = await new Promise((resolve, reject) => {
+      const rd = new FileReader();
+      rd.onload = e => resolve(String(e.target.result || '').split(',')[1] || '');
+      rd.onerror = () => reject(new Error('FileReader failed'));
+      rd.readAsDataURL(file);
+    });
+    const bytes = atob(base64);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    const blob = new Blob([arr], { type: file.type || 'application/octet-stream' });
+    const filePath = 'resources/' + deptClean + '/' + Date.now() + '_' + file.name;
+    const SUPA_URL = 'https://yrumjtzhwlyajmneaxco.supabase.co';
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlydW1qdHpod2x5YWptbmVheGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2ODI2MDIsImV4cCI6MjA5MjI1ODYwMn0.Iakq3Jdu2UbSpNsaXhJeBeq1k7Xa0XdrdhWOMSaJL6U';
+    const up = await fetch(SUPA_URL + '/storage/v1/object/documents/' + filePath, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': file.type || 'application/octet-stream',
+        'x-upsert': 'true'
+      },
+      body: blob
+    });
+    let fileUrl = null;
+    if (up.ok) {
+      fileUrl = SUPA_URL + '/storage/v1/object/public/documents/' + filePath;
+    } else {
+      console.warn('[RESOURCE] Storage upload failed:', up.status, await up.text());
+    }
+    const rows = await sbPost('resources', {
+      title: meta.title || file.name,
+      filename: file.name,
+      ext: (file.name.split('.').pop() || '').toLowerCase(),
+      file_size: meta.size || '',
+      dept: dept,
+      description: meta.desc || '',
+      file_url: fileUrl,
+      uploaded_by: (S.user && S.user.email) || ''
+    });
+    return rows && rows[0] ? rows[0] : null;
+  } catch(e) {
+    console.error('[RESOURCE ERROR]', e);
+    return null;
+  }
+}
+
+// ── RESOURCES: load, scoped by role ──
+async function sbLoadResources(user) {
+  let filter = '';
+  if (user && user.role === 'lead') {
+    filter = 'dept=in.(' + encodeURIComponent((user.dept||'').trim()) + ',All,all)';
+  } else if (user && user.role === 'joiner') {
+    filter = 'dept=in.(' + encodeURIComponent((user.dept||'').trim()) + ',All,all)';
+  }
+  // admin: no filter
+  const rows = await sbGet('resources', filter);
+  if (!rows) return [];
+  return rows.map(r => ({
+    id: r.id,
+    title: r.title || '',
+    filename: r.filename || '',
+    ext: r.ext || ((r.filename||'').split('.').pop() || '').toLowerCase(),
+    size: r.file_size || '',
+    dept: r.dept || '',
+    desc: r.description || '',
+    data: r.file_url || '',
+    isUrl: !!r.file_url,
+    date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : ''
+  }));
+}
+
+// ── RESOURCES: delete a resource by id ──
+async function sbDeleteResource(id) {
+  if (!id) return;
+  await sbDelete('resources', 'id=eq.' + encodeURIComponent(id));
+}
+
 // ── PEOPLE: load all people (joiners) ──
 async function sbLoadPeople() {
   return await sbGet('people') || [];
@@ -1191,6 +1295,131 @@ async function sbSavePerson(person) {
       day: person.day||1, active: true
     });
   }
+}
+
+// ── Resolve the current user's dept, falling back to a Supabase lookup.
+// Prevents feedback/reflection rows from being stored with empty dept
+// (which makes them invisible to leads forever — only admins would see them).
+async function _resolveDept() {
+  let dept = (window.S && S.user && S.user.dept ? String(S.user.dept) : '').trim();
+  if (dept) return dept;
+  if (window._supaReady && S.user && S.user.email) {
+    try {
+      const rows = await sbGet('people', 'email=eq.' + encodeURIComponent(S.user.email));
+      if (rows && rows[0] && rows[0].dept) {
+        dept = String(rows[0].dept).trim();
+        if (dept && S.user) S.user.dept = dept; // cache on session for next time
+      }
+    } catch(e) { console.warn('_resolveDept lookup failed:', e); }
+  }
+  return dept;
+}
+
+// ── FEEDBACK: save to Supabase (let DB auto-generate uuid id) ──
+// Routing key is `dept` — joiner's dept routes feedback to leads in same dept; admins see all.
+async function sbSaveFeedback(fb) {
+  return await sbPost('feedbacks', {
+    joiner_email: fb.authorId || '',
+    author_name: fb.author || '',
+    is_anonymous: !!fb.anon,
+    body: fb.body || '',
+    category: fb.category || 'General',
+    dept: fb.dept || '',
+    read: !!fb.read
+  });
+}
+
+// ── FEEDBACK: load from Supabase, scoped by current user's role ──
+async function sbLoadFeedbacks(user) {
+  if (!user) return [];
+  let filter = '';
+  if (user.role === 'lead')   filter = 'dept=eq.' + encodeURIComponent(user.dept || '');
+  else if (user.role === 'joiner') filter = 'joiner_email=eq.' + encodeURIComponent(user.email);
+  // admin: no filter — sees everything
+  const rows = await sbGet('feedbacks', filter);
+  if (!rows) return [];
+  return rows.map(r => ({
+    id: r.id,
+    author: r.author_name || (r.is_anonymous ? 'Anonymous' : 'Unknown'),
+    authorId: r.joiner_email || '',
+    anon: !!r.is_anonymous,
+    body: r.body || '',
+    category: r.category || 'General',
+    date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '',
+    dept: r.dept || '',
+    read: !!r.read
+  }));
+}
+
+// ── FEEDBACK: mark a single row as read ──
+async function sbMarkFeedbackRead(id) {
+  if (!id) return;
+  return await sbPatch('feedbacks', 'id=eq.' + encodeURIComponent(id), { read: true });
+}
+
+// ── REFLECTION: save (DB auto-generates uuid id) ──
+async function sbSaveReflection(rf) {
+  return await sbPost('reflections', {
+    joiner_email: rf.authorId || '',
+    author_name: rf.author || '',
+    title: rf.title || '',
+    body: rf.body || '',
+    type: rf.type || 'General',
+    dept: rf.dept || ''
+  });
+}
+
+// ── REFLECTION: load, scoped by role ──
+async function sbLoadReflections(user) {
+  if (!user) return [];
+  let filter = '';
+  if (user.role === 'lead')   filter = 'dept=eq.' + encodeURIComponent(user.dept || '');
+  else if (user.role === 'joiner') filter = 'joiner_email=eq.' + encodeURIComponent(user.email);
+  // admin: no filter
+  const rows = await sbGet('reflections', filter);
+  if (!rows) return [];
+  return rows.map(r => ({
+    id: r.id,
+    author: r.author_name || '',
+    authorId: r.joiner_email || '',
+    title: r.title || '',
+    body: r.body || '',
+    type: r.type || 'General',
+    dept: r.dept || '',
+    date: r.created_at ? new Date(r.created_at).toISOString().slice(0,10) : ''
+  }));
+}
+
+// ── REFLECTION: delete by id (only joiner can delete their own) ──
+async function sbDeleteReflection(id) {
+  if (!id) return;
+  return await sbDelete('reflections', 'id=eq.' + encodeURIComponent(id));
+}
+
+// ── REFLECTION: one-time backfill — push any local-only reflections (id startsWith 'r')
+// to Supabase. Idempotent: after success, ids are replaced with DB UUIDs so next login skips them.
+async function _backfillReflections(user) {
+  if (!user || user.role !== 'joiner') return;
+  const local = (window.S && S.reflections || []).filter(r => r.id && String(r.id).startsWith('r'));
+  if (!local.length) return;
+  for (const rf of local) {
+    const payload = {
+      authorId: rf.authorId || user.email,
+      author:   rf.author   || user.name,
+      title:    rf.title    || '',
+      body:     rf.body     || '',
+      type:     rf.type     || 'General',
+      dept:     rf.dept     || user.dept || ''
+    };
+    try {
+      const rows = await sbSaveReflection(payload);
+      if (rows && rows[0] && rows[0].id) {
+        const idx = S.reflections.findIndex(x => x.id === rf.id);
+        if (idx > -1) S.reflections[idx].id = rows[0].id;
+      }
+    } catch (e) { console.warn('reflection backfill error for', rf.id, e); }
+  }
+  save();
 }
 
 // Flag that Supabase is ready
@@ -1781,6 +2010,35 @@ function doLogin(user){
   }
   // Update Section III title to reflect this user's department
   _updateDeptSectionTitle(user.dept||'Hardware');
+  // SUPABASE: sync feedbacks from DB (scoped by role inside sbLoadFeedbacks)
+  if(window._supaReady){
+    sbLoadFeedbacks(user).then(function(fbs){
+      if(fbs){ S.feedbacks=fbs; save(); updateBadges(); }
+    }).catch(function(e){ console.warn('sbLoadFeedbacks error:',e); });
+  }
+  // SUPABASE: backfill any local-only reflections, THEN replace local state with DB result.
+  if(window._supaReady){
+    _backfillReflections(user).then(function(){
+      return sbLoadReflections(user);
+    }).then(function(rfs){
+      if(rfs){ S.reflections=rfs; save(); }
+    }).catch(function(e){ console.warn('reflections sync error:',e); });
+  }
+  // SUPABASE: sync resources from DB (scoped by role inside sbLoadResources)
+  if(window._supaReady){
+    sbLoadResources(user).then(function(res){
+      if(res){ S.resources=res; save(); if(typeof renderView==='function') try{ renderView(); }catch(e){} }
+    }).catch(function(e){ console.warn('sbLoadResources error:',e); });
+  }
+  // SUPABASE: fetch joiner's joining date (people.created_at) for tenure-based unlocks
+  if(user.role==='joiner' && window._supaReady){
+    sbGet('people','email=eq.'+encodeURIComponent(user.email)).then(function(rows){
+      if(rows&&rows[0]&&rows[0].created_at){
+        S.user.joinedAt=rows[0].created_at;
+        save();
+      }
+    }).catch(function(e){ console.warn('joinedAt fetch error:',e); });
+  }
   // SUPABASE: sync people progress from DB on admin/lead login
   if((user.role==='admin'||user.role==='lead') && window._supaReady){
     sbLoadPeople().then(function(people){
@@ -1891,6 +2149,7 @@ const navDefs = {
     {id:'module-builder',icon:'🔧',label:'Module Builder'},
     {id:'analytics',icon:'📊',label:'Analytics'},
     {id:'admin-feedback',icon:'💬',label:'Feedback Inbox',badge:'feedbacks'},
+    {id:'admin-reflections',icon:'◷',label:'Reflections'},
     {section:'Users'},
     {id:'admin-users',icon:'👥',label:'User Management'},
     {section:'Config'},
@@ -1906,6 +2165,8 @@ const navDefs = {
     {id:'lead-onboarding',icon:'◫',label:'Dept. Onboarding'},
     {section:'Feedback'},
     {id:'lead-feedback',icon:'💬',label:'Team Feedback',badge:'feedbacks'},
+    {section:'Reflections'},
+    {id:'lead-reflections',icon:'◷',label:'Team Reflections'},
   ],
 };
 
@@ -1931,7 +2192,8 @@ function buildNav(role){
 function updateBadges(){
   const nb=document.getElementById('badge-admin-overview');if(nb)nb.textContent=S.nudges.length;
   const fb=document.getElementById('badge-admin-feedback')||document.getElementById('badge-lead-feedback');
-  const unread=S.feedbacks.filter(f=>!f.read);
+  const isAdmin=S.user?.role==='admin';
+  const unread=S.feedbacks.filter(f=>!f.read && (isAdmin || f.dept===S.user?.dept));
   if(fb)fb.textContent=unread.length;
   const ab=document.getElementById('badge-lead-milestones');if(ab)ab.textContent=S.pendingApprovals.length;
 }
@@ -2029,7 +2291,7 @@ viewRenderers['dashboard']=el=>{
         <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':sessionId?'<span style="font-size:10px;background:rgba(61,111,232,.15);color:#7ba7ff;border:1px solid rgba(61,111,232,.25);border-radius:4px;padding:2px 8px;font-weight:700;font-family:monospace;">SESSION</span>':''}
+        ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':sessionId?`<button class="btn xs" style="font-size:10px;padding:2px 8px;" onclick="openSession('${sessionId}'); event.stopPropagation();">▶ Start Session</button>`:''}
         <div class="sdot ${dot}"></div>
       </div>
     </button>`;
@@ -2099,13 +2361,17 @@ viewRenderers['modules']=el=>{
     html+=`<div class="slabel">${s.title}</div>`;
     s.modules.forEach(m=>{
       const done=m.status==='done',ip=m.status==='in-progress',locked=m.status==='locked'&&!isPrivileged;
+      const sessionId=SESSION_MAP[m.id];
       html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" ${locked?'disabled':''} onclick="${locked?'':'openModuleById(\''+m.id+'\')'}">
         <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${locked&&!isPrivileged?'🔒':tIcon(m.type)}</div>
         <div class="mod-meta">
           <div class="mod-name">${m.title}</div>
           <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
         </div>
-        <div class="sdot ${done?'done':ip?'prog':'new'}"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':sessionId?`<button class="btn xs" style="font-size:10px;padding:2px 8px;" onclick="openSession('${sessionId}'); event.stopPropagation();">▶ Start Session</button>`:''}
+          <div class="sdot ${done?'done':ip?'prog':'new'}"></div>
+        </div>
       </button>`;
     });
   });
@@ -2142,14 +2408,24 @@ viewRenderers['milestones']=el=>{
     </div>`;
   }).join('');
 
-  const reflTypes=['3 Months','6 Months','1 Year','3 Years'];
-  const reflHtml=reflTypes.map((t,i)=>{
-    const unlocked=i===0;
+  const reflTypes=[
+    {label:'3 Months',  months:3},
+    {label:'6 Months',  months:6},
+    {label:'1 Year',    months:12},
+    {label:'3 Years',   months:36}
+  ];
+  const joinedAt=S.user?.joinedAt?new Date(S.user.joinedAt):null;
+  const tenureMonths=joinedAt?((Date.now()-joinedAt.getTime())/(1000*60*60*24*30.44)):0;
+  const reflHtml=reflTypes.map((tObj)=>{
+    const t=tObj.label;
+    const unlocked=tenureMonths>=tObj.months;
+    const unlockDate=joinedAt?new Date(joinedAt.getTime()+tObj.months*30.44*24*60*60*1000):null;
+    const subText=unlocked?'Available now':(unlockDate?'Unlocks '+unlockDate.toLocaleDateString('en-IN',{month:'short',year:'numeric'}):'Locked');
     const ref=S.reflections.find(r=>r.type===t);
     return `<div class="reflect-card" style="${unlocked?'':'opacity:.4;pointer-events:none'}">
       <div class="flex-between" style="margin-bottom:8px">
         <div><div style="font-size:13px;font-weight:800;color:var(--blue3)">${t} check-in</div>
-        <div class="muted" style="margin-top:2px">${unlocked?'Available now':'Locked'}</div></div>
+        <div class="muted" style="margin-top:2px">${subText}</div></div>
         <span class="chip ${unlocked?'blue':'gray'}">${unlocked?'Active':'Locked'}</span>
       </div>
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px">Where do you see yourself at the ${t} mark? What do you want to have accomplished at Elecbits?</div>
@@ -2199,7 +2475,7 @@ viewRenderers['departments']=el=>{
 // ──────────────────────────────────────────────
 viewRenderers['joiner-resources']=el=>{
   const dept=S.user?.dept||'Hardware';
-  const myRes=S.resources.filter(r=>r.dept===dept||r.dept==='all');
+  const myRes=S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All');
   el.innerHTML=`<div class="flex-between" style="margin-bottom:16px">
     <div><div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Resources</div>
     <div class="muted" style="margin-top:2px">Materials uploaded by your department lead for reference</div></div>
@@ -2211,7 +2487,8 @@ viewRenderers['joiner-resources']=el=>{
       <div class="muted" style="margin-top:2px">${r.desc||''}</div>
       <div class="muted" style="margin-top:4px">${r.filename} · ${r.size} · Uploaded ${r.date}</div>
     </div>
-    <button class="btn outline xs">👁 View</button>
+    ${r.data?`<button class="btn outline xs" onclick="window.open('${r.data}','_blank')">👁 View</button>
+    <a href="${r.data}" download="${r.filename}" class="btn outline xs" style="text-decoration:none;display:inline-flex;align-items:center;padding:4px 8px;">⬇ Download</a>`:`<span class="muted" style="font-size:11px;">⏳ Processing…</span>`}
   </div>`).join('')
   :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">📂</div><div style="font-size:14px;font-weight:600">No resources yet</div><div style="font-size:12px;margin-top:4px">Your department lead will upload materials here</div></div>'}`;
 };
@@ -2233,6 +2510,35 @@ viewRenderers['reflections']=el=>{
     <div style="font-size:13px;color:var(--text2);line-height:1.7">${r.body}</div>
   </div>`).join('')
   :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">✍️</div><div style="font-size:14px;font-weight:600">No reflections yet</div></div>'}`;
+};
+
+// ──────────────────────────────────────────────
+// REFLECTIONS INBOX (Admin / Lead — read-only)
+// ──────────────────────────────────────────────
+viewRenderers['admin-reflections']=viewRenderers['lead-reflections']=el=>{
+  const isAdmin=S.user?.role==='admin';
+  const renderInbox=function(){
+    const relevant=S.reflections.filter(r=>isAdmin?true:r.dept===S.user?.dept);
+    relevant.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">${isAdmin?'All Reflections':'Team Reflections'}</div>
+      ${relevant.length?relevant.map(r=>`<div class="card" style="margin-bottom:10px">
+        <div class="flex-between" style="margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:700">${r.title||'(untitled)'}</div>
+            <div class="muted" style="margin-top:3px">${r.author||'Unknown'} · ${r.date||''}${isAdmin&&r.dept?' · '+r.dept:''}</div>
+          </div>
+          <span class="chip blue">${r.type||'General'}</span>
+        </div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.7">${r.body||''}</div>
+      </div>`).join('')
+      :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">✍️</div><div style="font-size:14px;font-weight:600">No reflections yet</div></div>'}`;
+  };
+  renderInbox();
+  if(window._supaReady){
+    sbLoadReflections(S.user).then(function(rfs){
+      if(rfs){ S.reflections=rfs; renderInbox(); }
+    }).catch(function(e){ console.warn('sbLoadReflections error:',e); });
+  }
 };
 
 // ──────────────────────────────────────────────
@@ -2451,17 +2757,34 @@ viewRenderers['analytics']=el=>{
 // ADMIN FEEDBACK INBOX
 // ──────────────────────────────────────────────
 viewRenderers['admin-feedback']=viewRenderers['lead-feedback']=el=>{
-  const relevant=S.feedbacks.filter(f=>!S.user?.role==='admin'?f.managerEmail===S.user?.email:true);
-  S.feedbacks.forEach(f=>f.read=true); save(); updateBadges();
-  el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Feedback Inbox</div>
-    ${relevant.length?relevant.map(f=>`<div class="feedback-card">
-      <div class="flex-between" style="margin-bottom:8px">
-        <div style="font-size:13px;font-weight:700">${f.anon?'Anonymous':''+f.author}</div>
-        <div style="display:flex;align-items:center;gap:8px"><span class="chip blue">${f.category}</span><span class="muted">${f.date}</span></div>
-      </div>
-      <div style="font-size:13px;color:var(--text2);line-height:1.6">${f.body}</div>
-    </div>`).join('')
-    :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:600">No feedback received yet</div></div>'}`;
+  const isAdmin=S.user?.role==='admin';
+  const renderInbox=function(){
+    const relevant=S.feedbacks.filter(f=>isAdmin?true:f.dept===S.user?.dept);
+    relevant.forEach(f=>{
+      if(!f.read){
+        f.read=true;
+        if(window._supaReady && f.id && !String(f.id).startsWith('fb')){
+          sbMarkFeedbackRead(f.id).catch(function(e){ console.warn('sbMarkFeedbackRead error:',e); });
+        }
+      }
+    });
+    save(); updateBadges();
+    el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Feedback Inbox</div>
+      ${relevant.length?relevant.map(f=>`<div class="feedback-card">
+        <div class="flex-between" style="margin-bottom:8px">
+          <div style="font-size:13px;font-weight:700">${f.anon?'Anonymous':''+f.author}</div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="chip blue">${f.category}</span><span class="muted">${f.date}</span></div>
+        </div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6">${f.body}</div>
+      </div>`).join('')
+      :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:600">No feedback received yet</div></div>'}`;
+  };
+  renderInbox();
+  if(window._supaReady){
+    sbLoadFeedbacks(S.user).then(function(fbs){
+      if(fbs){ S.feedbacks=fbs; renderInbox(); }
+    }).catch(function(e){ console.warn('sbLoadFeedbacks error:',e); });
+  }
 };
 
 // ──────────────────────────────────────────────
@@ -2739,7 +3062,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
                   ${[['done','✅ Done'],['in-progress','⏳ In progress'],['not-started','○ Not started'],['locked','🔒 Locked (joiner)']].map(([val,lbl])=>`<option ${m.status===val?'selected':''} value="${val}">${lbl}</option>`).join('')}
                 </select>
                 <button class="btn outline xs" onclick="openEditMod('${s.id}','${m.id}')">Edit / Docs</button>
-                ${(typeof SESSION_MAP!=='undefined'&&(SESSION_MAP[m.id]||SESSION_MAP[m.title]))?`<button class="btn ghost xs" style="color:var(--blue-l)" onclick="openSession('${SESSION_MAP[m.id]||SESSION_MAP[m.title]}')">▶ Preview</button>`:''}
+                ${(typeof SESSION_MAP!=='undefined'&&(SESSION_MAP[m.id]||SESSION_MAP[m.title]))?`<button class="btn ghost xs" style="color:var(--blue-l)" onclick="openSession('${SESSION_MAP[m.id]||SESSION_MAP[m.title]}')">▶ Preview</button>`:`<button class="btn ghost xs" style="color:var(--blue-l)" onclick="openModuleById('${m.id}')">▶ Preview</button>`}
                 <button class="btn ghost xs" onclick="delMod('${s.id}','${m.id}')">✕</button>
               </div>`).join('')}
             ${!s.modules.length?`<div class="muted" style="padding:6px 0">No modules. Click "+ Module".</div>`:''}
@@ -2770,13 +3093,14 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
     <div class="slabel" style="margin-top:20px">Resources for joiners</div>
     <div class="flex-between" style="margin-bottom:8px">
       <div class="muted">Visible to all ${dept} joiners under Resources</div>
-      <button class="btn ghost sm" onclick="navTo('lead-resources')">Manage →</button>
+      <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';renderSelF();openModal('modal-add-resource')">+ Upload</button>
     </div>
-    ${S.resources.filter(r=>r.dept===dept||r.dept==='all').map(r=>`<div class="doc-card">
+    ${S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All').map(r=>`<div class="doc-card">
       <div class="doc-thumb">${fIcon(r.ext)}</div>
       <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${r.title}</div><div class="muted">${r.filename} · ${r.date}</div></div>
+      ${r.data?`<button class="btn outline xs" onclick="window.open('${r.data}','_blank')">👁 View</button>`:''}
       <button class="btn ghost xs" onclick="delRes('${r.id}');navTo('lead-onboarding')">✕</button>
-    </div>`).join('')||'<div class="muted" style="padding:8px 0">No resources. Use "Manage →".</div>'}`;
+    </div>`).join('')||'<div class="muted" style="padding:8px 0">No resources. Click "+ Upload" to add one.</div>'}`;
 
   // Wire up drag-and-drop AFTER rendering
   setTimeout(()=>initDragDrop(),50);
@@ -2970,9 +3294,12 @@ function saveModuleNote(){
   if(!_curMod)return;
   const note=document.getElementById('mm-note').value.trim();
   _curMod.note=note;
-  if(note&&!S.reflections.find(r=>r.title==='Module: '+_curMod.title))
-    S.reflections.push({id:'r'+Date.now(),title:'Module: '+_curMod.title,body:note,type:'General',date:new Date().toISOString().slice(0,10)});
-  save(); toast('Note saved ✓');
+  if(note&&!S.reflections.find(r=>r.title==='Module: '+_curMod.title)){
+    _pushReflection({title:'Module: '+_curMod.title,body:note,type:'General'});
+  } else {
+    save();
+  }
+  toast('Note saved ✓');
 }
 function markModuleProgress(){
   if(!_curMod||_curMod.status==='done')return;
@@ -2997,17 +3324,42 @@ function syncMilestones(){
     if(i===3) ms.status=S.milestones[2]?.status==='done'?'done':'locked';
   });
 }
+let _curMilestone=null;
 function openMs(id){
   syncMilestones();
   const ms=S.milestones.find(m=>m.id===id);if(!ms||ms.status==='locked')return;
+  _curMilestone=ms;
   document.getElementById('ms-title').textContent=ms.title;
   document.getElementById('ms-sub').textContent=ms.sub;
+  document.getElementById('ms-note').value='';
   openModal('modal-milestone');
 }
 function saveMilestoneNote(){
   const n=document.getElementById('ms-note').value.trim();
-  if(n) toast('Reflection saved ✓');
-  closeModal('modal-milestone');
+  if(!n||!_curMilestone){closeModal('modal-milestone');return;}
+  const tempId='r'+Date.now();
+  const rf={id:tempId,title:'Milestone: '+_curMilestone.title,body:n,type:'Milestone',
+    author:S.user?.name||'',authorId:S.user?.email||'',dept:S.user?.dept||'',
+    date:new Date().toISOString().slice(0,10)};
+  S.reflections.push(rf);
+  save(); toast('Reflection saved ✓'); closeModal('modal-milestone');
+  if(window._supaReady){
+    _resolveDept().then(function(dept){
+      if(!dept){
+        console.warn('saveMilestoneNote: no dept resolved — skipping Supabase save to avoid orphan row.');
+        return null;
+      }
+      rf.dept = dept;
+      const idx=S.reflections.findIndex(x=>x.id===tempId);
+      if(idx>-1){ S.reflections[idx].dept = dept; save(); }
+      return sbSaveReflection(rf);
+    }).then(function(rows){
+      if(rows&&rows[0]&&rows[0].id){
+        const idx=S.reflections.findIndex(x=>x.id===tempId);
+        if(idx>-1){ S.reflections[idx].id=rows[0].id; save(); }
+      }
+    }).catch(function(e){ console.warn('sbSaveReflection error:',e); });
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -3110,14 +3462,43 @@ function uploadResources(){
   const t=document.getElementById('res-title')?.value.trim();
   if(!t){toast('Please enter a title');return;}
   if(!_selFiles.length){toast('Please select files');return;}
-  _selFiles.forEach(f=>{
-    S.resources.push({id:'res'+Date.now()+Math.random(),title:t||f.name,filename:f.name,ext:f.name.split('.').pop().toLowerCase(),size:fmtSz(f.size),dept:document.getElementById('res-dept')?.value||'Hardware',desc:document.getElementById('res-desc')?.value||'',date:new Date().toLocaleDateString('en-IN')});
+  const dept=document.getElementById('res-dept')?.value||'Hardware';
+  const desc=document.getElementById('res-desc')?.value||'';
+  const files=_selFiles.slice();
+  // Optimistic local entries so the UI updates immediately
+  const localIds=files.map(f=>{
+    const id='res'+Date.now()+Math.random();
+    S.resources.push({id,title:t||f.name,filename:f.name,ext:f.name.split('.').pop().toLowerCase(),size:fmtSz(f.size),dept,desc,date:new Date().toLocaleDateString('en-IN'),data:null});
+    return id;
   });
   save();_selFiles=[];renderSelF();
-  toast(_selFiles.length===0?'Resources uploaded ✓':'Done');
+  toast('Uploading…');
   navTo('lead-resources');
+  if(window._supaReady){
+    files.forEach((f,i)=>{
+      sbSaveResource(f,{title:t,dept,desc,size:fmtSz(f.size)}).then(function(row){
+        if(!row) return;
+        const idx=S.resources.findIndex(r=>r.id===localIds[i]);
+        if(idx>-1){
+          S.resources[idx].id=row.id;
+          S.resources[idx].data=row.file_url||'';
+          S.resources[idx].isUrl=!!row.file_url;
+          save();
+          if(typeof renderView==='function') try{ renderView(); }catch(e){}
+        }
+      }).catch(function(e){ console.warn('sbSaveResource error:',e); });
+    });
+    toast('Resources uploaded ✓');
+  } else {
+    toast('Resources uploaded ✓');
+  }
 }
-function delRes(id){S.resources=S.resources.filter(r=>r.id!==id);save();}
+function delRes(id){
+  S.resources=S.resources.filter(r=>r.id!==id);save();
+  if(window._supaReady && id && !String(id).startsWith('res')){
+    sbDeleteResource(id).catch(function(e){ console.warn('sbDeleteResource error:',e); });
+  }
+}
 
 function addPerson(){
   const n=document.getElementById('np-name').value.trim(),e=document.getElementById('np-email').value.trim();
@@ -3354,22 +3735,73 @@ function removeDocFromModal(idx){
   toast('Removed');
 }
 
+function _pushReflection(rf){
+  const tempId='r'+Date.now();
+  rf.id=tempId;
+  rf.author=S.user?.name||'';
+  rf.authorId=S.user?.email||'';
+  rf.dept=S.user?.dept||'';
+  rf.date=new Date().toISOString().slice(0,10);
+  S.reflections.push(rf);
+  save();
+  if(window._supaReady){
+    // Resolve dept before the DB write — otherwise leads can't see it (same routing as feedback).
+    _resolveDept().then(function(dept){
+      if(!dept){
+        console.warn('_pushReflection: no dept resolved — skipping Supabase save to avoid orphan row.');
+        toast('Saved locally — set your department to share with your lead');
+        return null;
+      }
+      rf.dept = dept;
+      const idx=S.reflections.findIndex(x=>x.id===tempId);
+      if(idx>-1){ S.reflections[idx].dept = dept; save(); }
+      return sbSaveReflection(rf);
+    }).then(function(rows){
+      if(rows&&rows[0]&&rows[0].id){
+        const idx=S.reflections.findIndex(x=>x.id===tempId);
+        if(idx>-1){ S.reflections[idx].id=rows[0].id; save(); }
+      }
+    }).catch(function(e){ console.warn('sbSaveReflection error:',e); });
+  }
+}
 function saveReflection(){
   const t=document.getElementById('rf-title').value.trim(),b=document.getElementById('rf-body').value.trim();
   if(!t||!b){toast('Fill in all fields');return;}
-  S.reflections.push({id:'r'+Date.now(),title:t,body:b,type:document.getElementById('rf-type').value,date:new Date().toISOString().slice(0,10)});
-  save();closeModal('modal-add-reflection');navTo('reflections');toast('Reflection saved ✓');
+  _pushReflection({title:t,body:b,type:document.getElementById('rf-type').value});
+  closeModal('modal-add-reflection');navTo('reflections');toast('Reflection saved ✓');
 }
-function saveReflFromCard(type,body){if(!body.trim()){toast('Please write something');return;}S.reflections.push({id:'r'+Date.now(),title:type+' Reflection',body,type,date:new Date().toISOString().slice(0,10)});save();navTo('milestones');toast('Saved ✓');}
-function delRef(id){S.reflections=S.reflections.filter(r=>r.id!==id);save();navTo('reflections');}
+function saveReflFromCard(type,body){
+  if(!body.trim()){toast('Please write something');return;}
+  _pushReflection({title:type+' Reflection',body,type});
+  navTo('milestones');toast('Saved ✓');
+}
+function delRef(id){
+  S.reflections=S.reflections.filter(r=>r.id!==id);
+  save();navTo('reflections');
+  if(window._supaReady && id && !String(id).startsWith('r')){
+    sbDeleteReflection(id).catch(function(e){ console.warn('sbDeleteReflection error:',e); });
+  }
+}
 
-function submitFeedback(){
+async function submitFeedback(){
   const b=document.getElementById('fb-body')?.value.trim();
   if(!b){toast('Please write something');return;}
   const anon=document.getElementById('fb-anon')?.checked;
-  const mgr=S.user?.mgr||'';
-  S.feedbacks.push({id:'fb'+Date.now(),author:anon?'Anonymous':S.user?.name||'Unknown',authorId:S.user?.email,anon,body:b,category:document.getElementById('fb-cat')?.value||'General',date:new Date().toLocaleDateString('en-IN'),managerEmail:mgr,read:false});
+  const tempId='fb'+Date.now();
+  // Feedback is routed to leads by dept — refuse to save if we can't resolve one.
+  const dept = await _resolveDept();
+  if(!dept){ toast('Your department isn\'t set — ask an admin to fix your profile'); return; }
+  const fb={id:tempId,author:anon?'Anonymous':S.user?.name||'Unknown',authorId:S.user?.email,anon,body:b,category:document.getElementById('fb-cat')?.value||'General',date:new Date().toLocaleDateString('en-IN'),dept,read:false};
+  S.feedbacks.push(fb);
   save();updateBadges();toast('Feedback submitted ✓');navTo('feedback');
+  if(window._supaReady){
+    sbSaveFeedback(fb).then(function(rows){
+      if(rows && rows[0] && rows[0].id){
+        const idx=S.feedbacks.findIndex(x=>x.id===tempId);
+        if(idx>-1){ S.feedbacks[idx].id=rows[0].id; save(); }
+      }
+    }).catch(function(e){ console.warn('sbSaveFeedback error:',e); });
+  }
 }
 
 function approvePA(id){
@@ -3722,11 +4154,17 @@ function uploadModuleDoc(mid){
     const docObj={title:title||f.name,filename:f.name,ext:f.name.split('.').pop().toLowerCase(),
                   size:fmtSz(f.size),date:new Date().toLocaleDateString('en-IN'),
                   data:e.target.result,mime:f.type||'application/octet-stream'};
-    // Determine dept scope
+    // Determine dept scope — tag by the MODULE's section dept so joiners in that dept can see it,
+    // regardless of who uploaded (admin/lead from any dept).
     var modSec=null;
     S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec=s; }); });
-    var isCommon = modSec && (modSec.dept==='all'||modSec.dept==='All');
-    var dept = isCommon ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
+    var dept;
+    if(modSec){
+      dept = (modSec.dept==='all'||modSec.dept==='All') ? 'All' : String(modSec.dept).replace(/\s+/g,'');
+    } else {
+      // Standalone deptModule (no section) — fall back to uploader's dept
+      dept = (window.S&&S.user&&S.user.dept) ? S.user.dept.replace(/\s+/g,'') : 'All';
+    }
 
     // Show uploading state immediately
     toast('Uploading...');
