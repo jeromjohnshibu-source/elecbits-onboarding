@@ -753,7 +753,7 @@ to{opacity:1;transform:translateY(0)}}
       <div id="mm-quiz-content"></div>
     </div>
     <div class="modal-actions">
-      <button class="btn primary" id="mm-session-btn" style="margin-right:auto;" onclick="if(typeof launchModuleSession==='function')launchModuleSession();else{var m=window._curMod;if(m&&window.SESSION_MAP){var sid=SESSION_MAP[m.id]||SESSION_MAP[m.title];if(sid){document.getElementById('modal-module').classList.remove('open');var el=document.getElementById('session-'+sid);if(el){el.style.display='block';el.scrollTop=0;document.body.style.overflow='hidden';}}}}">▶ Start Session</button>
+      <button class="btn primary" id="mm-session-btn" style="margin-right:auto;" onclick="window._startSession()">▶ Start Session</button>
       <button class="btn ghost" onclick="closeModal('modal-module')">Close</button>
       <button class="btn primary" id="mm-cta" onclick="markModuleProgress()">Mark as complete ✓</button>
     </div>
@@ -993,6 +993,64 @@ to{opacity:1;transform:translateY(0)}}
 <div id="toast"></div>
 
 <script>
+// Global session launcher — defined first so always available
+window._startSession = function(){
+  var mod = window._curMod;
+  if(!mod){ console.warn('No current module'); return; }
+  var sm = window.SESSION_MAP;
+  if(!sm){ console.warn('No SESSION_MAP'); return; }
+  var sessionId = sm[mod.id] || sm[mod.title] || null;
+  console.log('[START] mod:', mod.id, '| session:', sessionId);
+  if(!sessionId){ alert('No session available for this module.'); return; }
+  // Close modal
+  var modal = document.getElementById('modal-module');
+  if(modal) modal.classList.remove('open');
+  // Open session directly
+  var el = document.getElementById('session-' + sessionId);
+  if(el){
+    el.style.display = 'block';
+    el.scrollTop = 0;
+    document.body.style.overflow = 'hidden';
+    console.log('[START] Opened session-' + sessionId);
+    // inject dept labels
+    if(typeof _injectDeptLabel === 'function') _injectDeptLabel();
+  } else {
+    console.error('[START] NOT FOUND: session-' + sessionId);
+  }
+};
+// Critical session functions — defined early so always available
+window.closeSession = function(id){
+  var el=document.getElementById('session-'+id);
+  if(el){ el.style.display='none'; document.body.style.overflow=''; }
+};
+window.markAndCloseSession = function(sessionId, moduleId){
+  var mod=null;
+  if(window.S && S.sections){
+    S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===moduleId) mod=m; }); });
+  }
+  if(mod && mod.status!=='done'){
+    mod.status='done';
+    if(typeof _syncJoinerProgress==='function') _syncJoinerProgress();
+    if(typeof save==='function') save();
+    if(typeof autoUnlock==='function') autoUnlock();
+    if(window._supaReady && window.S && S.user && S.user.role==='joiner'){
+      if(typeof sbSaveProgress==='function'){
+        sbSaveProgress(S.user.email, moduleId, 'done', mod.note||'').catch(function(e){
+          console.warn('sbSaveProgress error:', e);
+        });
+      }
+    }
+    if(typeof toast==='function') toast('Module complete ✓');
+  }
+  window.closeSession(sessionId);
+  // Refresh view
+  setTimeout(function(){
+    var active=document.querySelector('.sb-item.active');
+    if(active && typeof showContent==='function') showContent(active.dataset.view||'modules');
+  }, 300);
+};
+
+
 // ═══════════════════════════════════════════════════════════
 // SUPABASE DATABASE LAYER
 // All data now persists to the cloud — works across all devices
@@ -1236,7 +1294,7 @@ const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
   }catch(e){}
 })();
 
-let S = LS('state') || {
+var S = LS('state') || {
   user: null,
   people: [],
   sections: [
@@ -1339,6 +1397,7 @@ let S = LS('state') || {
     {id:3, name:'Aanya Kumar',  email:'aanya@elecbits.in',  password:'join123',  role:'joiner', dept:'Hardware',            designation:'Associate Hardware Engineer', mgr:'Nikhil Rawat', active:true, createdAt:'2024-01-15'},
   ],
 };
+window.S = S;
 
 // ── Capture the CODED default sections as the authoritative template ──
 // This must happen before any localStorage data can overwrite S.sections.
@@ -1378,7 +1437,7 @@ const _SECTION_TEMPLATE = (function(){
 })();
 
 // ── Global session map: moduleId → sessionId ──
-const SESSION_MAP = {
+window.SESSION_MAP = {
   'm1':'eb-overview','Elecbits story & overview':'eb-overview',
   'm2':'m5-business','Business & operating model':'m5-business',
   'm3':'eb-overview','Organisation structure':'eb-overview',
@@ -1407,7 +1466,7 @@ const SESSION_MAP = {
   'Understanding the hardware team':'dept-ch1-team',
 };
 
-function save(){ 
+window.save = function save(){ 
   // Ensure all people have onboardStatus
   S.people.forEach(p=>{ if(!p.onboardStatus) p.onboardStatus='New joiner'; });
   if(!S.users) S.users=[];
@@ -1945,7 +2004,7 @@ function updateBadges(){
   if(fb)fb.textContent=unread.length;
   const ab=document.getElementById('badge-lead-milestones');if(ab)ab.textContent=S.pendingApprovals.length;
 }
-function navTo(id){
+window.navTo = function navTo(id){
   document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('active'));
   const btn=document.querySelector(`.sb-item[data-view="${id}"]`);
   if(btn)btn.classList.add('active');
@@ -2461,9 +2520,16 @@ viewRenderers['analytics']=el=>{
 // ADMIN FEEDBACK INBOX
 // ──────────────────────────────────────────────
 viewRenderers['admin-feedback']=viewRenderers['lead-feedback']=el=>{
-  const relevant=S.feedbacks.filter(f=>!S.user?.role==='admin'?f.managerEmail===S.user?.email:true);
-  S.feedbacks.forEach(f=>f.read=true); save(); updateBadges();
-  el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Feedback Inbox</div>
+  // Load from Supabase first for cross-device visibility
+  el.innerHTML='<div style="padding:40px;text-align:center;color:rgba(255,255,255,.4)">Loading feedback...</div>';
+  function renderFeedbacks(feedbacks){
+    const isAdmin = S.user?.role==='admin';
+    const relevant = feedbacks.filter(f=> isAdmin ? true : f.managerEmail===S.user?.email || f.dept===S.user?.dept);
+    feedbacks.forEach(f=>f.read=true);
+    if(!S.feedbacks) S.feedbacks=[];
+    S.feedbacks = feedbacks;
+    save(); updateBadges();
+    el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Feedback Inbox</div>
     ${relevant.length?relevant.map(f=>`<div class="feedback-card">
       <div class="flex-between" style="margin-bottom:8px">
         <div style="font-size:13px;font-weight:700">${f.anon?'Anonymous':''+f.author}</div>
@@ -2472,6 +2538,29 @@ viewRenderers['admin-feedback']=viewRenderers['lead-feedback']=el=>{
       <div style="font-size:13px;color:var(--text2);line-height:1.6">${f.body}</div>
     </div>`).join('')
     :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:600">No feedback received yet</div></div>'}`;
+};
+  // Load feedbacks from Supabase and render
+  if(window._supaReady){
+    var isAdmin = S.user && S.user.role==='admin';
+    var fbFilter = isAdmin ? '' : 
+      'manager_email=eq.'+encodeURIComponent(S.user?.email||'')+'&dept=eq.'+encodeURIComponent((S.user?.dept||'').replace(/\s+/g,''));
+    sbGet('feedbacks', fbFilter).then(function(rows){
+      var feedbacks = [];
+      if(rows && rows.length){
+        feedbacks = rows.map(function(r){
+          return {
+            id: r.id, author: r.author_name, authorId: r.joiner_email,
+            anon: r.is_anonymous, body: r.body, category: r.category,
+            date: r.created_at ? r.created_at.split('T')[0] : '',
+            managerEmail: r.manager_email, dept: r.dept, read: r.read||false
+          };
+        });
+      }
+      renderFeedbacks(feedbacks);
+    }).catch(function(){ renderFeedbacks(S.feedbacks||[]); });
+  } else {
+    renderFeedbacks(S.feedbacks||[]);
+  }
 };
 
 // ──────────────────────────────────────────────
@@ -2796,7 +2885,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
 // ══════════════════════════════════════════════
 // MODULE DETAIL MODAL
 // ══════════════════════════════════════════════
-let _curMod=null,_curSec=null;
+var _curMod=null,_curSec=null;
 window.openModuleById = function openModuleById(id){
   let mod=null,sec=null;
   S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===id){mod=m;sec=s;}}));
@@ -2804,7 +2893,7 @@ window.openModuleById = function openModuleById(id){
   const isPrivileged=S.user?.role==='admin'||S.user?.role==='lead';
   // All modules are unlocked — allow any module to be opened
   if(!mod) return;
-  _curMod=mod;_curSec=sec;
+  _curMod=mod;_curSec=sec;window._curMod=mod;window._curSec=sec;
 
   // Re-apply latest sched changes live (even if lead edited after joiner logged in)
   try{
@@ -3397,8 +3486,44 @@ function submitFeedback(){
   if(!b){toast('Please write something');return;}
   const anon=document.getElementById('fb-anon')?.checked;
   const mgr=S.user?.mgr||'';
-  S.feedbacks.push({id:'fb'+Date.now(),author:anon?'Anonymous':S.user?.name||'Unknown',authorId:S.user?.email,anon,body:b,category:document.getElementById('fb-cat')?.value||'General',date:new Date().toLocaleDateString('en-IN'),managerEmail:mgr,read:false});
-  save();updateBadges();toast('Feedback submitted ✓');navTo('feedback');
+  const cat=document.getElementById('fb-cat')?.value||'General';
+  const fb={
+    id:'fb'+Date.now(),
+    author:anon?'Anonymous':S.user?.name||'Unknown',
+    authorId:anon?'anonymous':S.user?.email,
+    joiner_email:S.user?.email||'',
+    anon:anon,
+    body:b,
+    category:cat,
+    date:new Date().toLocaleDateString('en-IN'),
+    managerEmail:mgr,
+    dept:S.user?.dept||'',
+    read:false
+  };
+  if(!S.feedbacks) S.feedbacks=[];
+  S.feedbacks.push(fb);
+  save();
+  // Save to Supabase so lead and admin can see it on any device
+  if(window._supaReady){
+    sbPost('feedbacks',{
+      joiner_email: S.user?.email||'',
+      author_name: anon?'Anonymous':S.user?.name||'Unknown',
+      is_anonymous: anon||false,
+      body: b,
+      category: cat,
+      manager_email: mgr,
+      dept: S.user?.dept||'',
+      read: false,
+      created_at: new Date().toISOString()
+    }).then(function(r){
+      if(r) console.log('✓ Feedback saved to Supabase');
+      else console.warn('Feedback Supabase save returned null');
+    }).catch(function(e){ console.warn('Feedback save error:', e); });
+  }
+  updateBadges();
+  toast('Feedback submitted ✓');
+  document.getElementById('fb-body').value='';
+  navTo('feedback');
 }
 
 function approvePA(id){
@@ -3574,7 +3699,7 @@ function initDragDrop(){
   });
 }
 
-function openModal(id){document.getElementById(id).classList.add('open');}
+window.openModal = function openModal(id){document.getElementById(id).classList.add('open');}
 window.closeModal = function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-backdrop').forEach(b=>b.addEventListener('click',e=>{if(e.target===b)b.classList.remove('open');}));
 function togglePD(){document.getElementById('pd').classList.toggle('open');}
@@ -3597,7 +3722,7 @@ function chipCol(s){return{
   'Milestone approved':'green'
 }[s]||'gray';}
 function findMod(mid){let found=null;S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===mid)found=m;}));return found;}
-function toast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+window.toast = function toast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
 
 // ══════════════════════════════════════════════
 // JOINER DETAIL (Lead view)
@@ -4957,7 +5082,7 @@ window.closeSession = function closeSession(id){
   var el=document.getElementById('session-'+id);
   if(el){ el.style.display='none'; document.body.style.overflow=''; }
 }
-function markAndCloseSession(sessionId, moduleId){
+window.markAndCloseSession = function markAndCloseSession(sessionId, moduleId){
   var mod=null;
   S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===moduleId) mod=m; }); });
   if(mod && mod.status!=='done'){
