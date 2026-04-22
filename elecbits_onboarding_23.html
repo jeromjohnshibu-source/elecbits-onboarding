@@ -753,7 +753,7 @@ to{opacity:1;transform:translateY(0)}}
       <div id="mm-quiz-content"></div>
     </div>
     <div class="modal-actions">
-      <button class="btn primary" id="mm-session-btn" style="display:none;margin-right:auto;" onclick="launchModuleSession()">▶ Start Session</button>
+      <button class="btn primary" id="mm-session-btn" style="margin-right:auto;" onclick="window._startSession()">▶ Start Session</button>
       <button class="btn ghost" onclick="closeModal('modal-module')">Close</button>
       <button class="btn primary" id="mm-cta" onclick="markModuleProgress()">Mark as complete ✓</button>
     </div>
@@ -831,6 +831,7 @@ to{opacity:1;transform:translateY(0)}}
     <div class="modal-hd"><h3>Add New Joiner</h3><button class="modal-close" onclick="closeModal('modal-add-person')">✕</button></div>
     <div class="fg"><label class="flabel">Full Name</label><input class="finput" id="np-name" placeholder="e.g. Rahul Sharma"/></div>
     <div class="fg"><label class="flabel">Email</label><input class="finput" id="np-email" placeholder="rahul@elecbits.in"/></div>
+    <div class="fg"><label class="flabel">Password</label><input class="finput" id="np-pass" type="password" placeholder="Set a login password" value="pass123"/></div>
     <div class="fg"><label class="flabel">Role / Designation</label><input class="finput" id="np-role" placeholder="e.g. Associate Hardware Engineer"/></div>
     <div class="fg"><label class="flabel">Department</label><select class="fselect" id="np-dept"><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
     <div class="fg"><label class="flabel">Track</label><select class="fselect" id="np-track"><option>Fresher</option><option>Experienced</option></select></div>
@@ -1012,6 +1013,64 @@ to{opacity:1;transform:translateY(0)}}
 <div id="toast"></div>
 
 <script>
+// Global session launcher — defined first so always available
+window._startSession = function(){
+  var mod = window._curMod;
+  if(!mod){ console.warn('No current module'); return; }
+  var sm = window.SESSION_MAP;
+  if(!sm){ console.warn('No SESSION_MAP'); return; }
+  var sessionId = sm[mod.id] || sm[mod.title] || null;
+  console.log('[START] mod:', mod.id, '| session:', sessionId);
+  if(!sessionId){ alert('No session available for this module.'); return; }
+  // Close modal
+  var modal = document.getElementById('modal-module');
+  if(modal) modal.classList.remove('open');
+  // Open session directly
+  var el = document.getElementById('session-' + sessionId);
+  if(el){
+    el.style.display = 'block';
+    el.scrollTop = 0;
+    document.body.style.overflow = 'hidden';
+    console.log('[START] Opened session-' + sessionId);
+    // inject dept labels
+    if(typeof _injectDeptLabel === 'function') _injectDeptLabel();
+  } else {
+    console.error('[START] NOT FOUND: session-' + sessionId);
+  }
+};
+// Critical session functions — defined early so always available
+window.closeSession = function(id){
+  var el=document.getElementById('session-'+id);
+  if(el){ el.style.display='none'; document.body.style.overflow=''; }
+};
+window.markAndCloseSession = function(sessionId, moduleId){
+  var mod=null;
+  if(window.S && S.sections){
+    S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===moduleId) mod=m; }); });
+  }
+  if(mod && mod.status!=='done'){
+    mod.status='done';
+    if(typeof _syncJoinerProgress==='function') _syncJoinerProgress();
+    if(typeof save==='function') save();
+    if(typeof autoUnlock==='function') autoUnlock();
+    if(window._supaReady && window.S && S.user && S.user.role==='joiner'){
+      if(typeof sbSaveProgress==='function'){
+        sbSaveProgress(S.user.email, moduleId, 'done', mod.note||'').catch(function(e){
+          console.warn('sbSaveProgress error:', e);
+        });
+      }
+    }
+    if(typeof toast==='function') toast('Module complete ✓');
+  }
+  window.closeSession(sessionId);
+  // Refresh view
+  setTimeout(function(){
+    var active=document.querySelector('.sb-item.active');
+    if(active && typeof showContent==='function') showContent(active.dataset.view||'modules');
+  }, 300);
+};
+
+
 // ═══════════════════════════════════════════════════════════
 // SUPABASE DATABASE LAYER
 // All data now persists to the cloud — works across all devices
@@ -1288,11 +1347,20 @@ async function sbLoadPeople() {
 // ── PEOPLE: save/update a person ──
 async function sbSavePerson(person) {
   if (person.email) {
+    // Save to people table
     await sbUpsert('people', {
       name: person.name, email: person.email, role: person.role||'joiner',
       dept: person.dept, designation: person.designation||'',
       mgr: person.mgr||'', track: person.track||'Full Onboarding',
       day: person.day||1, active: true
+    });
+    // Save to users table so they can log in
+    await sbUpsert('users', {
+      name: person.name, email: person.email,
+      password: person.password||'pass123',
+      role: person.role||'joiner', dept: person.dept||'',
+      designation: person.designation||'', mgr: person.mgr||'',
+      active: true
     });
   }
 }
@@ -1455,7 +1523,7 @@ const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
   }catch(e){}
 })();
 
-let S = LS('state') || {
+var S = LS('state') || {
   user: null,
   people: [],
   sections: [
@@ -1558,6 +1626,7 @@ let S = LS('state') || {
     {id:3, name:'Aanya Kumar',  email:'aanya@elecbits.in',  password:'join123',  role:'joiner', dept:'Hardware',            designation:'Associate Hardware Engineer', mgr:'Nikhil Rawat', active:true, createdAt:'2024-01-15'},
   ],
 };
+window.S = S;
 
 // ── Capture the CODED default sections as the authoritative template ──
 // This must happen before any localStorage data can overwrite S.sections.
@@ -1597,7 +1666,7 @@ const _SECTION_TEMPLATE = (function(){
 })();
 
 // ── Global session map: moduleId → sessionId ──
-const SESSION_MAP = {
+window.SESSION_MAP = {
   'm1':'eb-overview','Elecbits story & overview':'eb-overview',
   'm2':'m5-business','Business & operating model':'m5-business',
   'm3':'eb-overview','Organisation structure':'eb-overview',
@@ -1626,7 +1695,7 @@ const SESSION_MAP = {
   'Understanding the hardware team':'dept-ch1-team',
 };
 
-function save(){ 
+window.save = function save(){ 
   // Ensure all people have onboardStatus
   S.people.forEach(p=>{ if(!p.onboardStatus) p.onboardStatus='New joiner'; });
   if(!S.users) S.users=[];
@@ -2197,7 +2266,7 @@ function updateBadges(){
   if(fb)fb.textContent=unread.length;
   const ab=document.getElementById('badge-lead-milestones');if(ab)ab.textContent=S.pendingApprovals.length;
 }
-function navTo(id){
+window.navTo = function navTo(id){
   document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('active'));
   const btn=document.querySelector(`.sb-item[data-view="${id}"]`);
   if(btn)btn.classList.add('active');
@@ -2360,10 +2429,10 @@ viewRenderers['modules']=el=>{
   S.sections.forEach(s=>{
     html+=`<div class="slabel">${s.title}</div>`;
     s.modules.forEach(m=>{
-      const done=m.status==='done',ip=m.status==='in-progress',locked=m.status==='locked'&&!isPrivileged;
+      const done=m.status==='done',ip=m.status==='in-progress',locked=false;
       const sessionId=SESSION_MAP[m.id];
-      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" ${locked?'disabled':''} onclick="${locked?'':'openModuleById(\''+m.id+'\')'}">
-        <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${locked&&!isPrivileged?'🔒':tIcon(m.type)}</div>
+      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" onclick="openModuleById('${m.id}')">
+        <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${tIcon(m.type)}</div>
         <div class="mod-meta">
           <div class="mod-name">${m.title}</div>
           <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
@@ -3110,14 +3179,15 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
 // ══════════════════════════════════════════════
 // MODULE DETAIL MODAL
 // ══════════════════════════════════════════════
-let _curMod=null,_curSec=null;
-function openModuleById(id){
+var _curMod=null,_curSec=null;
+window.openModuleById = function openModuleById(id){
   let mod=null,sec=null;
   S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===id){mod=m;sec=s;}}));
   // Admins and leads can open any module; locked only blocks joiners
   const isPrivileged=S.user?.role==='admin'||S.user?.role==='lead';
-  if(!mod||(mod.status==='locked'&&!isPrivileged)) return;
-  _curMod=mod;_curSec=sec;
+  // All modules are unlocked — allow any module to be opened
+  if(!mod) return;
+  _curMod=mod;_curSec=sec;window._curMod=mod;window._curSec=sec;
 
   // Re-apply latest sched changes live (even if lead edited after joiner logged in)
   try{
@@ -3215,9 +3285,11 @@ function openModuleById(id){
   var sessionId=(typeof SESSION_MAP!=='undefined')
     ? (SESSION_MAP[mod.id] || SESSION_MAP[mod.title] || null)
     : null;
+  console.log('[SESSION] mod.id:', mod.id, '| sessionId:', sessionId);
   if(sessionBtn){
     sessionBtn.style.display = sessionId ? 'inline-flex' : 'none';
     sessionBtn.dataset.session = sessionId || '';
+    sessionBtn.textContent = '▶ Start Session';
   }
 
   // Load documents tab — pull from shared key first, merge with mod.docs
@@ -3523,10 +3595,26 @@ function addPerson(){
   }
   const newPersonId = Date.now();
   S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner'});
-  // SUPABASE: clear any stale progress for this email so new joiner starts fresh
+  // SUPABASE: save new joiner to both people AND users tables
   if(window._supaReady){
+    var newRole = document.getElementById('np-role').value || 'joiner';
+    var newMgr  = document.getElementById('np-mgr').value || '';
+    var newTrack= document.getElementById('np-track').value || 'Full Onboarding';
+    var newPass = document.getElementById('np-pass') ? document.getElementById('np-pass').value : 'pass123';
+    // Save to people table
+    sbUpsert('people', {
+      name:n, email:e, role:newRole, dept:newDept,
+      designation:document.getElementById('np-desig')?document.getElementById('np-desig').value:'',
+      mgr:newMgr, track:newTrack, day:1, progress:0,
+      onboard_status:'New joiner', active:true
+    }).catch(function(err){ console.warn('people save error:', err); });
+    // Save to users table so they can log in
+    sbUpsert('users', {
+      name:n, email:e, password:newPass, role:newRole,
+      dept:newDept, designation:'', mgr:newMgr, active:true
+    }).catch(function(err){ console.warn('users save error:', err); });
+    // Clear any stale progress
     sbDelete('progress', 'joiner_email=eq.'+encodeURIComponent(e.toLowerCase()))
-      .then(function(){ console.log('✓ Cleared stale progress for new joiner:', e); })
       .catch(function(err){ console.warn('Could not clear progress:', err); });
   }
   if(!S.users) S.users=[];
@@ -3977,8 +4065,8 @@ function initDragDrop(){
   });
 }
 
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+window.openModal = function openModal(id){document.getElementById(id).classList.add('open');}
+window.closeModal = function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-backdrop').forEach(b=>b.addEventListener('click',e=>{if(e.target===b)b.classList.remove('open');}));
 function togglePD(){document.getElementById('pd').classList.toggle('open');}
 function closePD(){document.getElementById('pd').classList.remove('open');}
@@ -4000,7 +4088,7 @@ function chipCol(s){return{
   'Milestone approved':'green'
 }[s]||'gray';}
 function findMod(mid){let found=null;S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===mid)found=m;}));return found;}
-function toast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+window.toast = function toast(msg,dur=2800){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
 
 // ══════════════════════════════════════════════
 // JOINER DETAIL (Lead view)
@@ -4571,8 +4659,8 @@ function _mgrOptions(selected){
   var managers = S.users.filter(function(u){ return u.role==='lead'||u.role==='admin'; });
   var opts = '<option value="">— Select manager —</option>';
   managers.forEach(function(u){
-    var sel = (selected && selected.toLowerCase()===u.name.toLowerCase()) ? ' selected' : '';
-    opts += '<option value="'+u.name+'"'+sel+'>'+u.name+' ('+u.designation+')</option>';
+    var sel = (selected && (selected.toLowerCase()===u.name.toLowerCase() || selected.toLowerCase()===u.email.toLowerCase())) ? ' selected' : '';
+    opts += '<option value="'+u.email+'"'+sel+'>'+u.name+' ('+u.designation+')</option>';
   });
   return opts;
 }
@@ -5288,14 +5376,20 @@ function submitForceChangePw(){
 </div>
 
 <script>
-function launchModuleSession(){
-  var btn=document.getElementById('mm-session-btn');
-  var sessionId=btn?btn.dataset.session:null;
-  if(!sessionId) return;
+window.launchModuleSession = function launchModuleSession(){
+  // Look up session directly from current module — most reliable
+  var mod = window._curMod || _curMod;
+  if(!mod) return;
+  var sessionId = SESSION_MAP[mod.id] || SESSION_MAP[mod.title] || null;
+  console.log('[LAUNCH] mod.id:', mod.id, '| sessionId:', sessionId);
+  if(!sessionId){
+    toast('No session available for this module yet');
+    return;
+  }
   closeModal('modal-module');
   openSession(sessionId);
 }
-function openSession(id){
+window.openSession = function openSession(id){
   var el=document.getElementById('session-'+id);
   if(el){
     el.style.display='block';
@@ -5356,11 +5450,11 @@ function openSession(id){
     }catch(e){}
   }
 }
-function closeSession(id){
+window.closeSession = function closeSession(id){
   var el=document.getElementById('session-'+id);
   if(el){ el.style.display='none'; document.body.style.overflow=''; }
 }
-function markAndCloseSession(sessionId, moduleId){
+window.markAndCloseSession = function markAndCloseSession(sessionId, moduleId){
   var mod=null;
   S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===moduleId) mod=m; }); });
   if(mod && mod.status!=='done'){
