@@ -753,7 +753,7 @@ to{opacity:1;transform:translateY(0)}}
       <div id="mm-quiz-content"></div>
     </div>
     <div class="modal-actions">
-      <button class="btn primary" id="mm-session-btn" style="display:none;margin-right:auto;" onclick="launchModuleSession()">▶ Start Session</button>
+      <button class="btn primary" id="mm-session-btn" style="margin-right:auto;" onclick="if(typeof launchModuleSession==='function')launchModuleSession();else{var m=window._curMod;if(m&&window.SESSION_MAP){var sid=SESSION_MAP[m.id]||SESSION_MAP[m.title];if(sid){document.getElementById('modal-module').classList.remove('open');var el=document.getElementById('session-'+sid);if(el){el.style.display='block';el.scrollTop=0;document.body.style.overflow='hidden';}}}}">▶ Start Session</button>
       <button class="btn ghost" onclick="closeModal('modal-module')">Close</button>
       <button class="btn primary" id="mm-cta" onclick="markModuleProgress()">Mark as complete ✓</button>
     </div>
@@ -2797,7 +2797,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
 // MODULE DETAIL MODAL
 // ══════════════════════════════════════════════
 let _curMod=null,_curSec=null;
-function openModuleById(id){
+window.openModuleById = function openModuleById(id){
   let mod=null,sec=null;
   S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===id){mod=m;sec=s;}}));
   // Admins and leads can open any module; locked only blocks joiners
@@ -2906,6 +2906,7 @@ function openModuleById(id){
   if(sessionBtn){
     sessionBtn.style.display = sessionId ? 'inline-flex' : 'none';
     sessionBtn.dataset.session = sessionId || '';
+    sessionBtn.textContent = '▶ Start Session';
   }
 
   // Load documents tab — pull from shared key first, merge with mod.docs
@@ -3574,7 +3575,7 @@ function initDragDrop(){
 }
 
 function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+window.closeModal = function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-backdrop').forEach(b=>b.addEventListener('click',e=>{if(e.target===b)b.classList.remove('open');}));
 function togglePD(){document.getElementById('pd').classList.toggle('open');}
 function closePD(){document.getElementById('pd').classList.remove('open');}
@@ -4878,14 +4879,20 @@ function submitForceChangePw(){
 </div>
 
 <script>
-function launchModuleSession(){
-  var btn=document.getElementById('mm-session-btn');
-  var sessionId=btn?btn.dataset.session:null;
-  if(!sessionId) return;
+window.launchModuleSession = function launchModuleSession(){
+  // Look up session directly from current module — most reliable
+  var mod = window._curMod || _curMod;
+  if(!mod) return;
+  var sessionId = SESSION_MAP[mod.id] || SESSION_MAP[mod.title] || null;
+  console.log('[LAUNCH] mod.id:', mod.id, '| sessionId:', sessionId);
+  if(!sessionId){
+    toast('No session available for this module yet');
+    return;
+  }
   closeModal('modal-module');
   openSession(sessionId);
 }
-function openSession(id){
+window.openSession = function openSession(id){
   var el=document.getElementById('session-'+id);
   if(el){
     el.style.display='block';
@@ -4946,7 +4953,7 @@ function openSession(id){
     }catch(e){}
   }
 }
-function closeSession(id){
+window.closeSession = function closeSession(id){
   var el=document.getElementById('session-'+id);
   if(el){ el.style.display='none'; document.body.style.overflow=''; }
 }
