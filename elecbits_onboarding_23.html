@@ -1131,6 +1131,29 @@ async function sbSaveProgress(joinerEmail, moduleId, status, note='') {
   });
 }
 
+// Helper — persists a single module's status+note to Supabase for the logged-in joiner.
+// Fire-and-forget; swallows errors so UI flow is never blocked.
+function _syncModuleToSupabase(mod){
+  if(!mod || !window._supaReady) return;
+  if(!S.user || S.user.role!=='joiner') return;
+  sbSaveProgress(S.user.email, mod.id, mod.status||'not-started', mod.note||'')
+    .catch(function(e){ console.warn('sbSaveProgress error:',e); });
+}
+
+// Push every module in local state up to Supabase.
+// Used on login as a backfill so localStorage-only progress makes it to the DB.
+async function _backfillJoinerProgressToSupabase(email){
+  if(!window._supaReady || !email) return;
+  const mods = (S.sections||[]).flatMap(s=>s.modules||[]);
+  // Only push rows that actually have some signal — skip bare 'not-started' without a note.
+  const worthSaving = mods.filter(m => (m.status && m.status!=='not-started' && m.status!=='locked') || (m.note && m.note.trim()));
+  for (const m of worthSaving) {
+    try {
+      await sbSaveProgress(email, m.id, m.status||'not-started', m.note||'');
+    } catch(e) { console.warn('backfill row failed:', m.id, e); }
+  }
+}
+
 // ── PROGRESS: load all module statuses for a joiner ──
 async function sbLoadProgress(joinerEmail) {
   const rows = await sbGet('progress', `joiner_email=eq.${encodeURIComponent(joinerEmail)}`);
@@ -1886,25 +1909,36 @@ function _loadJoinerState(email){
   S.reflections = js.reflections || [];
   S.quizAnswers = js.quizAnswers || {};
 
-  // SUPABASE: overlay DB progress on top of local state (DB is source of truth)
+  // SUPABASE: two-way sync between local state and DB so progress never gets lost.
+  // 1) Merge DB → local (DB takes priority only when it has a MORE advanced status)
+  // 2) Push any local progress that isn't in DB back up (backfill)
   if(window._supaReady && window.S && S.user){
+    const STATUS_RANK = { 'locked':0, 'not-started':1, 'in-progress':2, 'done':3 };
     sbLoadProgress(S.user.email).then(function(progressMap){
-      if(!progressMap || !Object.keys(progressMap).length) return;
+      progressMap = progressMap || {};
       S.sections.forEach(function(sec){
         sec.modules.forEach(function(m){
-          if(progressMap[m.id]){
-            var dbStatus = progressMap[m.id].status;
-            // Never apply 'locked' from DB if the module is now unlocked in code
-            // This handles cases where admin unlocks a module after joiner already has progress
+          var db = progressMap[m.id];
+          if(db){
+            var dbStatus = db.status;
+            // Never regress: pick whichever side has the higher-ranked status
+            var localRank = STATUS_RANK[m.status]  != null ? STATUS_RANK[m.status]  : 1;
+            var dbRank    = STATUS_RANK[dbStatus] != null ? STATUS_RANK[dbStatus] : 1;
             if(dbStatus === 'locked' && m.status !== 'locked'){
-              // Module was unlocked in code — keep it unlocked, ignore DB locked status
-            } else {
-              m.status = dbStatus || m.status;
+              // keep local unlocked; don't let DB re-lock
+            } else if (dbRank > localRank) {
+              m.status = dbStatus;
             }
-            if(progressMap[m.id].note) m.note = progressMap[m.id].note;
+            // Note: DB wins only if local is empty, otherwise local (fresher edits) wins
+            if(db.note && !m.note) m.note = db.note;
           }
         });
       });
+      // Backfill any local-only progress up to DB so future devices can see it
+      _backfillJoinerProgressToSupabase(S.user.email).catch(function(e){
+        console.warn('progress backfill error:',e);
+      });
+      if(!Object.keys(progressMap).length) return;
       // Also load module meta from DB (title, date, host etc set by lead/admin)
       sbLoadAllModuleMeta().then(function(metaMap){
         if(!metaMap) return;
@@ -3395,11 +3429,15 @@ function saveModuleNote(){
   if(!_curMod)return;
   const note=document.getElementById('mm-note').value.trim();
   _curMod.note=note;
+  // Writing a note implies engagement — bump status from not-started to in-progress
+  // so the joiner's view reflects their work AND so the row shows up in Supabase.
+  if(note && _curMod.status==='not-started') _curMod.status='in-progress';
   if(note&&!S.reflections.find(r=>r.title==='Module: '+_curMod.title)){
     _pushReflection({title:'Module: '+_curMod.title,body:note,type:'General'});
   } else {
     save();
   }
+  _syncModuleToSupabase(_curMod);
   toast('Note saved ✓');
 }
 function markModuleProgress(){
@@ -3407,6 +3445,7 @@ function markModuleProgress(){
   _curMod.status='done';
   _syncJoinerProgress();
   save(); autoUnlock();
+  _syncModuleToSupabase(_curMod);
   closeModal('modal-module'); toast('Module marked complete ✓');
   const active=document.querySelector('.sb-item.active');
   if(active) showContent(active.dataset.view||'modules');
