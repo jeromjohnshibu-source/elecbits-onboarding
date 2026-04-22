@@ -3229,7 +3229,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
                   ${[['done','✅ Done'],['in-progress','⏳ In progress'],['not-started','○ Not started'],['locked','🔒 Locked (joiner)']].map(([val,lbl])=>`<option ${m.status===val?'selected':''} value="${val}">${lbl}</option>`).join('')}
                 </select>
                 <button class="btn outline xs" onclick="openEditMod('${s.id}','${m.id}')">Edit / Docs</button>
-                ${(typeof SESSION_MAP!=='undefined'&&(SESSION_MAP[m.id]||SESSION_MAP[m.title]))?`<button class="btn ghost xs" style="color:var(--blue-l)" onclick="openSession('${SESSION_MAP[m.id]||SESSION_MAP[m.title]}')">▶ Preview</button>`:`<button class="btn ghost xs" style="color:var(--blue-l)" onclick="openModuleById('${m.id}')">▶ Preview</button>`}
+                <button class="btn ghost xs" style="color:var(--blue-l)" onclick="previewModule('${m.id}')">▶ Preview</button>
                 <button class="btn ghost xs" onclick="delMod('${s.id}','${m.id}')">✕</button>
               </div>`).join('')}
             ${!s.modules.length?`<div class="muted" style="padding:6px 0">No modules. Click "+ Module".</div>`:''}
@@ -3252,7 +3252,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
         <select class="fselect" style="width:130px;font-size:11px;padding:4px 6px" onchange="(function(v){const dm=S.deptModules.find(x=>x.id==='${m.id}');if(dm)dm.status=v;save();renderView();})(this.value)">
           ${[['done','✅ Done'],['in-progress','⏳ In progress'],['not-started','○ Not started'],['locked','🔒 Locked (joiner)']].map(([val,lbl])=>`<option ${(m.status||'locked')===val?'selected':''} value="${val}">${lbl}</option>`).join('')}
         </select>
-        ${hasSess?`<button class="btn outline xs" onclick="openSession('${hasSess}')">▶ Preview</button>`:''}
+        <button class="btn outline xs" onclick="previewModule('${m.id}')">▶ Preview</button>
         <button class="btn ghost xs" onclick="openModuleById('${m.id}')">Open →</button>
         <button class="btn ghost xs" onclick="delDM('${m.id}')">✕</button>
       </div>`;
@@ -3278,6 +3278,32 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
 // MODULE DETAIL MODAL
 // ══════════════════════════════════════════════
 var _curMod=null,_curSec=null;
+// Lead/admin preview for a module. Tries the slide-deck session first (for modules
+// mapped in SESSION_MAP whose DOM element exists), then falls back to the joiner-facing
+// module popup so every module has a working Preview button.
+window.previewModule = function previewModule(id){
+  try{
+    let mod=null;
+    S.sections.forEach(s=>s.modules.forEach(m=>{ if(m.id===id) mod=m; }));
+    if(!mod && S.deptModules) mod = S.deptModules.find(d=>d.id===id) || null;
+    const sessId = (typeof SESSION_MAP!=='undefined') && (SESSION_MAP[id] || (mod && SESSION_MAP[mod.title])) || null;
+    if(sessId){
+      const el = document.getElementById('session-'+sessId);
+      if(el){
+        el.style.display='block'; el.scrollTop=0; document.body.style.overflow='hidden';
+        if(typeof _injectDeptLabel==='function') _injectDeptLabel();
+        return;
+      }
+      console.warn('[previewModule] session DOM not found for id:', sessId, '— falling back to module popup');
+    }
+    if(typeof openModuleById==='function') openModuleById(id);
+    else toast('Preview unavailable for this module');
+  }catch(e){
+    console.error('[previewModule] error:', e);
+    toast('Preview failed — check console');
+  }
+};
+
 window.openModuleById = function openModuleById(id){
   let mod=null,sec=null;
   S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===id){mod=m;sec=s;}}));
