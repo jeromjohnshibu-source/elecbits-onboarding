@@ -2372,7 +2372,7 @@ viewRenderers['dashboard']=el=>{
         <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':sessionId?`<button class="btn xs" style="font-size:10px;padding:2px 8px;" onclick="openSession('${sessionId}'); event.stopPropagation();">▶ Start Session</button>`:''}
+        ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':''}
         <div class="sdot ${dot}"></div>
       </div>
     </button>`;
@@ -2450,7 +2450,7 @@ viewRenderers['modules']=el=>{
           <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
-          ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':sessionId?`<button class="btn xs" style="font-size:10px;padding:2px 8px;" onclick="openSession('${sessionId}'); event.stopPropagation();">▶ Start Session</button>`:''}
+          ${done?'<span style="font-size:11px;color:var(--green);font-weight:600">✓ Done</span>':''}
           <div class="sdot ${done?'done':ip?'prog':'new'}"></div>
         </div>
       </button>`;
