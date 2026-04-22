@@ -2463,12 +2463,19 @@ viewRenderers['modules']=el=>{
 // MILESTONES & CAREER
 // ──────────────────────────────────────────────
 viewRenderers['milestones']=el=>{
-  // Defensive re-seed: old localStorage snapshots sometimes leave these empty,
-  // which makes the whole page look blank.
+  // Hard fallback for milestones so the page can never render blank even if
+  // localStorage is stale or `_freshJoinerState` hasn't run yet.
+  const MS_FALLBACK=[
+    {id:'ms1',title:'Week 1 — Company orientation complete',sub:'Elecbits overview, team intros, org structure',status:'in-progress'},
+    {id:'ms2',title:'Industry foundation complete',sub:'9 modules — unlocks departmental training',status:'locked'},
+    {id:'ms3',title:'Department onboarding complete',sub:'All 7 chapters — team, flow, access, tools, resources, first tasks',status:'locked'},
+    {id:'ms4',title:'Full onboarding complete',sub:'All sections done',status:'locked'}
+  ];
   if(!Array.isArray(S.milestones) || !S.milestones.length){
-    try{ S.milestones = _freshJoinerState().milestones; save(); }catch(e){}
+    try{ S.milestones = (typeof _freshJoinerState==='function' ? _freshJoinerState().milestones : MS_FALLBACK); save(); }
+    catch(e){ S.milestones = MS_FALLBACK; }
   }
-  syncMilestones();
+  try{ syncMilestones(); }catch(e){ console.warn('syncMilestones failed:',e); }
   const dept=S.user?.dept||'Hardware';
   const career=(S.careerMilestones && (S.careerMilestones[dept]||S.careerMilestones['default']))
     ||[{level:'Associate',desc:'Starting point.',timeline:'0–6 months',current:true},
@@ -2506,7 +2513,7 @@ viewRenderers['milestones']=el=>{
   ];
   const joinedAt=S.user?.joinedAt?new Date(S.user.joinedAt):null;
   const tenureMonths=joinedAt?((Date.now()-joinedAt.getTime())/(1000*60*60*24*30.44)):0;
-  const reflHtml=reflTypes.map((tObj)=>{
+  const reflHtml=reflTypes.map((tObj,i)=>{
     const t=tObj.label;
     const unlocked=tenureMonths>=tObj.months;
     const unlockDate=joinedAt?new Date(joinedAt.getTime()+tObj.months*30.44*24*60*60*1000):null;
