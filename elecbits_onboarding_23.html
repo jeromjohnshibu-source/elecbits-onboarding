@@ -663,7 +663,7 @@ to{opacity:1;transform:translateY(0)}}
             <button class="pd-item" onclick="navTo('reflections');closePD()">◷ My Reflections</button>
             <button class="pd-item" onclick="navTo('joiner-resources');closePD()">📁 Resources</button>
             <button class="pd-item" onclick="navTo('feedback');closePD()">💬 Give Feedback</button>
-            <button class="pd-item" onclick="openModal('modal-settings');closePD()">⚙️ Settings</button>
+            <button class="pd-item" onclick="openSettingsModal();closePD()">⚙️ Settings</button>
             <div class="divider" style="margin:4px 0"></div>
             <button class="pd-item danger" onclick="logout()">↩ Sign out</button>
           </div>
@@ -3925,12 +3925,39 @@ function toggleNR(id,v){const n=S.notifRules.find(n=>n.id===id);if(n){n.active=v
 
 function resolveNudge(id){S.nudges=S.nudges.filter(n=>n.id!==id);save();updateBadges();navTo('admin-overview');toast('Resolved ✓');}
 
+// Opens the Settings modal and locks down fields joiners aren't allowed to edit
+// (dept, reporting manager, notification preference — controlled by admin/lead).
+function openSettingsModal(){
+  const isJoiner = S.user && S.user.role === 'joiner';
+  // Populate current values so joiners can still see their settings even when read-only.
+  const deptSel = document.getElementById('set-dept');
+  const mgrInp  = document.getElementById('set-mgr');
+  const notifSel= document.getElementById('set-notif');
+  if(deptSel && S.user && S.user.dept){
+    // Ensure the user's current dept is a selectable option (in case it isn't in the default list)
+    if(![...deptSel.options].some(o=>o.value===S.user.dept || o.text===S.user.dept)){
+      const opt=document.createElement('option'); opt.textContent=S.user.dept; deptSel.appendChild(opt);
+    }
+    deptSel.value = S.user.dept;
+  }
+  if(mgrInp && S.user) mgrInp.value = S.user.mgr || '';
+  // Disable the three locked fields for joiners; keep them editable for admin/lead.
+  if(deptSel)  deptSel.disabled  = isJoiner;
+  if(mgrInp)   mgrInp.readOnly   = isJoiner;
+  if(notifSel) notifSel.disabled = isJoiner;
+  openModal('modal-settings');
+}
+
 function saveSettings(){
   if(S.user){
+    const isJoiner = S.user.role === 'joiner';
     S.user.name=document.getElementById('set-name').value;
     S.user.email=document.getElementById('set-email').value;
-    S.user.dept=document.getElementById('set-dept').value;
-    S.user.mgr=document.getElementById('set-mgr').value;
+    // Joiners can't change dept / reporting manager — those stay as-is.
+    if(!isJoiner){
+      S.user.dept=document.getElementById('set-dept').value;
+      S.user.mgr=document.getElementById('set-mgr').value;
+    }
     var newPw=(document.getElementById('set-new-pw')||{}).value||'';
     var confPw=(document.getElementById('set-confirm-pw')||{}).value||'';
     if(newPw){
