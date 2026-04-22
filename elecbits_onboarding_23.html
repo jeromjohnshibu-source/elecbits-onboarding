@@ -2098,9 +2098,9 @@ viewRenderers['modules']=el=>{
   S.sections.forEach(s=>{
     html+=`<div class="slabel">${s.title}</div>`;
     s.modules.forEach(m=>{
-      const done=m.status==='done',ip=m.status==='in-progress',locked=m.status==='locked'&&!isPrivileged;
-      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" ${locked?'disabled':''} onclick="${locked?'':'openModuleById(\''+m.id+'\')'}">
-        <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${locked&&!isPrivileged?'🔒':tIcon(m.type)}</div>
+      const done=m.status==='done',ip=m.status==='in-progress',locked=false;
+      html+=`<button class="mod-item ${done?'done':ip?'in-prog':''}" onclick="${'openModuleById(\''+m.id+'\')'}">
+        <div class="mod-icon" style="background:${done?'var(--green-l)':ip?'var(--amber-l)':'var(--bg3)'}">${tIcon(m.type)}</div>
         <div class="mod-meta">
           <div class="mod-name">${m.title}</div>
           <div class="mod-sub">${sLabel(m.status)} · ~${m.time} min${m.host?' · '+m.host:''}${m.date?' · '+fmtDate(m.date):''}</div>
@@ -2792,7 +2792,8 @@ function openModuleById(id){
   S.sections.forEach(s=>s.modules.forEach(m=>{if(m.id===id){mod=m;sec=s;}}));
   // Admins and leads can open any module; locked only blocks joiners
   const isPrivileged=S.user?.role==='admin'||S.user?.role==='lead';
-  if(!mod||(mod.status==='locked'&&!isPrivileged)) return;
+  // All modules are unlocked — allow any module to be opened
+  if(!mod) return;
   _curMod=mod;_curSec=sec;
 
   // Re-apply latest sched changes live (even if lead edited after joiner logged in)
@@ -2891,6 +2892,7 @@ function openModuleById(id){
   var sessionId=(typeof SESSION_MAP!=='undefined')
     ? (SESSION_MAP[mod.id] || SESSION_MAP[mod.title] || null)
     : null;
+  console.log('[SESSION] mod.id:', mod.id, '| sessionId:', sessionId);
   if(sessionBtn){
     sessionBtn.style.display = sessionId ? 'inline-flex' : 'none';
     sessionBtn.dataset.session = sessionId || '';
