@@ -1591,6 +1591,18 @@ var S = LS('state') || {
       {level:'Senior Box Build Engineer',desc:'Lead production floor, train team, own quality metrics.',timeline:'18–36 months',current:false},
       {level:'Box Build Lead',desc:'Define processes, scale production, own delivery targets.',timeline:'3+ years',current:false},
     ],
+    'Project Management': [
+      {level:'Associate Project Manager',desc:'Shadow senior PMs, run meeting notes, track action items, learn XoR and client comms.',timeline:'0–6 months',current:true},
+      {level:'Project Manager',desc:'Own projects end-to-end — scope, schedule, client, cross-team handovers.',timeline:'6–18 months',current:false},
+      {level:'Senior Project Manager',desc:'Handle key accounts and complex multi-team projects, mentor junior PMs.',timeline:'18–36 months',current:false},
+      {level:'PM Lead / Head of PM',desc:'Define PM practices, own delivery metrics, build the PM team.',timeline:'3+ years',current:false},
+    ],
+    'Supply Chain': [
+      {level:'Supply Chain Analyst',desc:'Learn BOM costing, RFQ flow, vendor database, inventory basics.',timeline:'0–6 months',current:true},
+      {level:'Procurement Manager',desc:'Own sourcing for projects, negotiate lead times and pricing, qualify vendors.',timeline:'6–18 months',current:false},
+      {level:'Senior Procurement Manager',desc:'Lead strategic sourcing, manage key vendor relationships, drive cost optimisation.',timeline:'18–36 months',current:false},
+      {level:'Head of Supply Chain',desc:'Own the supply chain function, vendor strategy, inventory policy, and team.',timeline:'3+ years',current:false},
+    ],
     'default': [
       {level:'Associate',desc:'Learn the domain, build foundational knowledge.',timeline:'0–6 months',current:true},
       {level:'Individual Contributor',desc:'Own work independently, contribute to team goals.',timeline:'6–18 months',current:false},
@@ -2451,9 +2463,18 @@ viewRenderers['modules']=el=>{
 // MILESTONES & CAREER
 // ──────────────────────────────────────────────
 viewRenderers['milestones']=el=>{
+  // Defensive re-seed: old localStorage snapshots sometimes leave these empty,
+  // which makes the whole page look blank.
+  if(!Array.isArray(S.milestones) || !S.milestones.length){
+    try{ S.milestones = _freshJoinerState().milestones; save(); }catch(e){}
+  }
   syncMilestones();
   const dept=S.user?.dept||'Hardware';
-  const career=S.careerMilestones[dept]||S.careerMilestones['default'];
+  const career=(S.careerMilestones && (S.careerMilestones[dept]||S.careerMilestones['default']))
+    ||[{level:'Associate',desc:'Starting point.',timeline:'0–6 months',current:true},
+       {level:'Individual Contributor',desc:'Own work independently.',timeline:'6–18 months',current:false},
+       {level:'Senior',desc:'Lead projects.',timeline:'18–36 months',current:false},
+       {level:'Lead',desc:'Own the function.',timeline:'3+ years',current:false}];
 
   const msHtml=S.milestones.map(ms=>{
     const done=ms.status==='done',locked=ms.status==='locked',ip=ms.status==='in-progress';
@@ -2524,8 +2545,8 @@ viewRenderers['departments']=el=>{
     {emoji:'💾',name:'Firmware',desc:'Embedded software, microcontroller programming, bring-up',pct:0},
     {emoji:'📦',name:'ODM',desc:'Original Design Manufacturing — client intake to production',pct:0},
     {emoji:'🏭',name:'Box Build',desc:'Final assembly, integration, QC, dispatch',pct:0},
-    {emoji:'📊',name:'Project Management',desc:'Timelines, cross-functional coordination, client delivery',pct:0,soon:true},
-    {emoji:'🔗',name:'Supply Chain',desc:'Vendor management, RFQ, component sourcing, lead times',pct:0,soon:true},
+    {emoji:'📊',name:'Project Management',desc:'Timelines, cross-functional coordination, client delivery',pct:0},
+    {emoji:'🔗',name:'Supply Chain',desc:'Vendor management, RFQ, component sourcing, lead times',pct:0},
   ];
   el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Departments at Elecbits</div>
     <div class="grid2">${depts.map(d=>`
@@ -2918,7 +2939,8 @@ viewRenderers['lead-dashboard']=el=>{
   const estStr=st.estStr;
   const deptInfo={
     Hardware:{emoji:'🔧',color:'var(--blue)'},Firmware:{emoji:'💾',color:'var(--teal)'},
-    ODM:{emoji:'📦',color:'var(--amber)'},'Box Build':{emoji:'🏭',color:'var(--green)'}
+    ODM:{emoji:'📦',color:'var(--amber)'},'Box Build':{emoji:'🏭',color:'var(--green)'},
+    'Project Management':{emoji:'📊',color:'var(--violet)'},'Supply Chain':{emoji:'🔗',color:'var(--amber)'}
   };
   const dd=deptInfo[dept]||{emoji:'🏢',color:'var(--blue)'};
   el.innerHTML=`
@@ -3472,11 +3494,23 @@ const deptData={
   ],tools:['Assembly SOPs','Quality Checklists','Barcode Scanner System','ERP'],channels:'#boxbuild on Slack'},
   'Project Management':{vision:'Own the project end-to-end — from the first client call to the last feedback note. Be the single point of accountability for every Elecbits project.',team:[
     {name:'Arjun Sharma',role:'Project Management Lead',level:'head'},
+    {name:'Neha Iyer',role:'Senior Project Manager',level:'senior'},
+    {name:'Vikram Rao',role:'Project Manager',level:'member'},
   ],projects:[
     {name:'Schneider Smart Panel — PM',status:'Active',desc:'End-to-end project coordination for Schneider industrial panel'},
     {name:'Urban Company IoT Device — PM',status:'Completed',desc:'Full project lifecycle from PO to delivery and CRM'},
     {name:'XOR Motor Driver — PM',status:'Active',desc:'Hardware + firmware project coordination'},
   ],tools:['XoR','Google Drive','Slack','Google Sheets','Notion'],channels:'#project-management on Slack · Daily stand-up 9:30am'},
+  'Supply Chain':{vision:'Secure the right components at the right price and the right time — keep every Elecbits build moving without a single stock-out.',team:[
+    {name:'Manish Gupta',role:'Head of Supply Chain',level:'head'},
+    {name:'Pooja Verma',role:'Senior Procurement Manager',level:'senior'},
+    {name:'Aditya Nair',role:'Supply Chain Analyst',level:'member'},
+    {name:'Isha Bansal',role:'Vendor Coordinator',level:'member'},
+  ],projects:[
+    {name:'XOR Motor Driver — Sourcing',status:'Active',desc:'Multi-vendor sourcing for motor driver BOM'},
+    {name:'Global IC Shortage Mitigation',status:'Active',desc:'Alternate part qualification and allocation tracking'},
+    {name:'Vendor Consolidation Drive',status:'Completed',desc:'Reduced vendor base by 35% while keeping lead times stable'},
+  ],tools:['XoR','SAP','Excel','Google Sheets','Slack'],channels:'#supply-chain on Slack · Weekly vendor review Fridays 3pm'},
 };
 function openDeptPage(name){
   const d=deptData[name]||{vision:'Department page coming soon.',team:[],projects:[],tools:[],channels:'—'};
@@ -3945,6 +3979,18 @@ function openSettingsModal(){
   if(deptSel)  deptSel.disabled  = isJoiner;
   if(mgrInp)   mgrInp.readOnly   = isJoiner;
   if(notifSel) notifSel.disabled = isJoiner;
+  // Strip the dropdown chevron for joiners so the disabled selects read as plain values,
+  // not broken dropdowns. Reset for admin/lead in case the modal was opened earlier as joiner.
+  const stripArrow = (sel)=>{ if(!sel) return;
+    sel.style.appearance       = isJoiner?'none':'';
+    sel.style.webkitAppearance = isJoiner?'none':'';
+    sel.style.mozAppearance    = isJoiner?'none':'';
+    sel.style.backgroundImage  = isJoiner?'none':'';
+    sel.style.paddingRight     = isJoiner?'12px':'';
+    sel.style.cursor           = isJoiner?'default':'';
+  };
+  stripArrow(deptSel);
+  stripArrow(notifSel);
   openModal('modal-settings');
 }
 
