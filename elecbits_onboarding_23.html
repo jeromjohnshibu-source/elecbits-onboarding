@@ -660,7 +660,7 @@ to{opacity:1;transform:translateY(0)}}
               <div class="pd-name" id="pd-name">Aanya Kumar</div>
               <div class="pd-meta" id="pd-meta">Joiner · Hardware · Day 12</div>
             </div>
-            <button class="pd-item" onclick="navTo('reflections');closePD()">◷ My Reflections</button>
+            <button class="pd-item" onclick="navTo(_reflectionsView());closePD()">◷ My Reflections</button>
             <button class="pd-item" onclick="navTo('joiner-resources');closePD()">📁 Resources</button>
             <button class="pd-item" onclick="navTo('feedback');closePD()">💬 Give Feedback</button>
             <button class="pd-item" onclick="openSettingsModal();closePD()">⚙️ Settings</button>
@@ -2304,6 +2304,7 @@ const navDefs = {
     {id:'analytics',icon:'📊',label:'Analytics'},
     {id:'admin-feedback',icon:'💬',label:'Feedback Inbox',badge:'feedbacks'},
     {id:'admin-reflections',icon:'◷',label:'Reflections'},
+    {id:'my-reflections',icon:'◷',label:'My Reflections'},
     {section:'Users'},
     {id:'admin-users',icon:'👥',label:'User Management'},
     {section:'Config'},
@@ -2321,6 +2322,7 @@ const navDefs = {
     {id:'lead-feedback',icon:'💬',label:'Team Feedback',badge:'feedbacks'},
     {section:'Reflections'},
     {id:'lead-reflections',icon:'◷',label:'Team Reflections'},
+    {id:'my-reflections',icon:'◷',label:'My Reflections'},
   ],
 };
 
@@ -2664,14 +2666,16 @@ viewRenderers['joiner-resources']=el=>{
 };
 
 // ──────────────────────────────────────────────
-// REFLECTIONS
+// MY REFLECTIONS — personal view for every role
 // ──────────────────────────────────────────────
-viewRenderers['reflections']=el=>{
+viewRenderers['reflections']=viewRenderers['my-reflections']=el=>{
+  const me=(S.user&&S.user.email?S.user.email:'').toLowerCase();
+  const mine=S.reflections.filter(r=>(r.authorId||'').toLowerCase()===me);
   el.innerHTML=`<div class="flex-between" style="margin-bottom:16px">
     <div style="font-size:16px;font-weight:800;letter-spacing:-.4px">My Reflections</div>
     <button class="btn primary sm" onclick="openModal('modal-add-reflection')">+ Add Reflection</button>
   </div>
-  ${S.reflections.length?S.reflections.map(r=>`<div class="card" style="margin-bottom:10px">
+  ${mine.length?mine.map(r=>`<div class="card" style="margin-bottom:10px">
     <div class="flex-between" style="margin-bottom:10px">
       <div><div style="font-size:14px;font-weight:700">${r.title}</div>
       <div class="muted" style="margin-top:3px">${r.date} · <span class="chip blue">${r.type}</span></div></div>
@@ -2687,8 +2691,11 @@ viewRenderers['reflections']=el=>{
 // ──────────────────────────────────────────────
 viewRenderers['admin-reflections']=viewRenderers['lead-reflections']=el=>{
   const isAdmin=S.user?.role==='admin';
+  const me=(S.user&&S.user.email?S.user.email:'').toLowerCase();
   const renderInbox=function(){
-    const relevant=S.reflections.filter(r=>isAdmin?true:r.dept===S.user?.dept);
+    const relevant=S.reflections
+      .filter(r=>(r.authorId||'').toLowerCase()!==me)
+      .filter(r=>isAdmin?true:r.dept===S.user?.dept);
     relevant.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">${isAdmin?'All Reflections':'Team Reflections'}</div>
       ${relevant.length?relevant.map(r=>`<div class="card" style="margin-bottom:10px">
@@ -4033,11 +4040,17 @@ function _pushReflection(rf){
     }).catch(function(e){ console.warn('sbSaveReflection error:',e); });
   }
 }
+function _reflectionsView(){
+  var a=document.querySelector('.sb-item.active');
+  var v=a&&a.dataset?a.dataset.view:'';
+  if(v==='my-reflections'||v==='reflections') return v;
+  return S.user&&S.user.role==='joiner'?'reflections':'my-reflections';
+}
 function saveReflection(){
   const t=document.getElementById('rf-title').value.trim(),b=document.getElementById('rf-body').value.trim();
   if(!t||!b){toast('Fill in all fields');return;}
   _pushReflection({title:t,body:b,type:document.getElementById('rf-type').value});
-  closeModal('modal-add-reflection');navTo('reflections');toast('Reflection saved ✓');
+  closeModal('modal-add-reflection');navTo(_reflectionsView());toast('Reflection saved ✓');
 }
 function saveReflFromCard(type,body){
   if(!body.trim()){toast('Please write something');return;}
@@ -4046,7 +4059,7 @@ function saveReflFromCard(type,body){
 }
 function delRef(id){
   S.reflections=S.reflections.filter(r=>r.id!==id);
-  save();navTo('reflections');
+  save();navTo(_reflectionsView());
   if(window._supaReady && id && !String(id).startsWith('r')){
     sbDeleteReflection(id).catch(function(e){ console.warn('sbDeleteReflection error:',e); });
   }
