@@ -147,7 +147,9 @@ to{opacity:1;transform:translateY(0)}}
 .sb-item{display:flex;align-items:center;width:calc(100% - 8px);margin:1px 4px;padding:9px 10px;border-radius:7px;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.45);transition:all .1s;font-family:var(--font);font-size:12.5px;font-weight:500;position:relative;white-space:nowrap;overflow:hidden;flex-shrink:0}
 .sb-item:hover{background:rgba(255,255,255,.07);color:#fff}
 .sb-item.active{background:rgba(61,111,232,.28);color:#fff;border:1px solid rgba(61,111,232,.35)}
-.sb-icon{width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px}
+.sb-icon{width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;color:currentColor}
+.sb-icon svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.75;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block}
+.pd-item svg{width:16px;height:16px;stroke:currentColor;stroke-width:1.75;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 .sb-label{margin-left:10px;opacity:0;transition:opacity .1s .05s;font-size:12.5px;flex:1}
 .sidebar:hover .sb-label,.sidebar.expanded .sb-label{opacity:1}
 .sb-badge{background:var(--red);color:#fff;font-size:8px;padding:1px 5px;border-radius:8px;font-weight:700;font-family:var(--mono);opacity:0;transition:opacity .1s;flex-shrink:0}
@@ -660,12 +662,12 @@ to{opacity:1;transform:translateY(0)}}
               <div class="pd-name" id="pd-name">Aanya Kumar</div>
               <div class="pd-meta" id="pd-meta">Joiner · Hardware · Day 12</div>
             </div>
-            <button class="pd-item" onclick="navTo(_reflectionsView());closePD()">◷ My Reflections</button>
-            <button class="pd-item" onclick="navTo('joiner-resources');closePD()">📁 Resources</button>
-            <button class="pd-item" onclick="navTo('feedback');closePD()">💬 Give Feedback</button>
-            <button class="pd-item" onclick="openSettingsModal();closePD()">⚙️ Settings</button>
+            <button class="pd-item" onclick="navTo(_reflectionsView());closePD()"><svg viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/></svg><span>My Reflections</span></button>
+            <button class="pd-item" onclick="navTo('joiner-resources');closePD()"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Resources</span></button>
+            <button class="pd-item" onclick="navTo('feedback');closePD()"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Give Feedback</span></button>
+            <button class="pd-item" onclick="openSettingsModal();closePD()"><svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Settings</span></button>
             <div class="divider" style="margin:4px 0"></div>
-            <button class="pd-item danger" onclick="logout()">↩ Sign out</button>
+            <button class="pd-item danger" onclick="logout()"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>
           </div>
         </div>
       </div>
@@ -2283,46 +2285,66 @@ function applyUser(u){
 // ══════════════════════════════════════════════
 // NAV BUILDER — role-specific, NO switcher shown to user
 // ══════════════════════════════════════════════
+// Lucide-derived stroke icons; CSS handles size/color.
+const ICONS = {
+  home:        '<svg viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  dashboard:   '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+  modules:     '<svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>',
+  milestones:  '<svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
+  departments: '<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><line x1="8" y1="6" x2="8.01" y2="6"/><line x1="12" y1="6" x2="12.01" y2="6"/><line x1="16" y1="6" x2="16.01" y2="6"/><line x1="8" y1="10" x2="8.01" y2="10"/><line x1="12" y1="10" x2="12.01" y2="10"/><line x1="16" y1="10" x2="16.01" y2="10"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="16" y1="14" x2="16.01" y2="14"/></svg>',
+  folder:      '<svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  notebook:    '<svg viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/></svg>',
+  feedback:    '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  wrench:      '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  analytics:   '<svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+  users:       '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  bell:        '<svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  workflow:    '<svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  inbox:       '<svg viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  'user-cog':  '<svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M10 15H6a4 4 0 0 0-4 4v2"/><circle cx="19" cy="15" r="3"/><path d="M19 10v2"/><path d="M19 18v2"/><path d="m22.3 12.7-1.7 1"/><path d="m17.4 15.3-1.7 1"/><path d="m22.3 17.3-1.7-1"/><path d="m17.4 14.7-1.7-1"/></svg>',
+  settings:    '<svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+  logout:      '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+};
 const navDefs = {
   joiner:[
     {section:'My Journey'},
-    {id:'home',icon:'🏠',label:'Home'},
-    {id:'dashboard',icon:'⊙',label:'Dashboard'},
-    {id:'modules',icon:'◫',label:'Learning Modules'},
-    {id:'milestones',icon:'◈',label:'Milestones & Career'},
+    {id:'home',icon:'home',label:'Home'},
+    {id:'dashboard',icon:'dashboard',label:'Dashboard'},
+    {id:'modules',icon:'modules',label:'Learning Modules'},
+    {id:'milestones',icon:'milestones',label:'Milestones & Career'},
     {section:'Company'},
-    {id:'departments',icon:'⬡',label:'Departments'},
-    {id:'joiner-resources',icon:'📁',label:'Resources'},
-    {id:'reflections',icon:'◷',label:'Reflections'},
-    {id:'feedback',icon:'💬',label:'Feedback'},
+    {id:'departments',icon:'departments',label:'Departments'},
+    {id:'joiner-resources',icon:'folder',label:'Resources'},
+    {id:'reflections',icon:'notebook',label:'Reflections'},
+    {id:'feedback',icon:'feedback',label:'Feedback'},
   ],
   admin:[
     {section:'Oversight'},
-    {id:'admin-overview',icon:'◈',label:'Overview',badge:'nudges'},
-    {id:'admin-people',icon:'◫',label:'All People'},
-    {id:'module-builder',icon:'🔧',label:'Module Builder'},
-    {id:'analytics',icon:'📊',label:'Analytics'},
-    {id:'admin-feedback',icon:'💬',label:'Feedback Inbox',badge:'feedbacks'},
-    {id:'admin-reflections',icon:'◷',label:'Reflections'},
-    {id:'my-reflections',icon:'◷',label:'My Reflections'},
+    {id:'admin-overview',icon:'dashboard',label:'Overview',badge:'nudges'},
+    {id:'admin-people',icon:'users',label:'All People'},
+    {id:'module-builder',icon:'wrench',label:'Module Builder'},
+    {id:'analytics',icon:'analytics',label:'Analytics'},
+    {id:'admin-feedback',icon:'feedback',label:'Feedback Inbox',badge:'feedbacks'},
+    {id:'admin-reflections',icon:'inbox',label:'Reflections'},
+    {id:'my-reflections',icon:'notebook',label:'My Reflections'},
     {section:'Users'},
-    {id:'admin-users',icon:'👥',label:'User Management'},
+    {id:'admin-users',icon:'user-cog',label:'User Management'},
     {section:'Config'},
-    {id:'workflows',icon:'◷',label:'Workflows'},
-    {id:'notifications',icon:'🔔',label:'Notification Rules'},
+    {id:'workflows',icon:'workflow',label:'Workflows'},
+    {id:'notifications',icon:'bell',label:'Notification Rules'},
   ],
   lead:[
     {section:'My Team'},
-    {id:'lead-dashboard',icon:'⊙',label:'Dashboard'},
-    {id:'lead-members',icon:'👥',label:'Team Members'},
-    {id:'lead-progress',icon:'◈',label:'Team Progress'},
+    {id:'lead-dashboard',icon:'dashboard',label:'Dashboard'},
+    {id:'lead-members',icon:'users',label:'Team Members'},
+    {id:'lead-progress',icon:'analytics',label:'Team Progress'},
     {section:'Onboarding'},
-    {id:'lead-onboarding',icon:'◫',label:'Dept. Onboarding'},
+    {id:'lead-onboarding',icon:'modules',label:'Dept. Onboarding'},
     {section:'Feedback'},
-    {id:'lead-feedback',icon:'💬',label:'Team Feedback',badge:'feedbacks'},
+    {id:'lead-feedback',icon:'feedback',label:'Team Feedback',badge:'feedbacks'},
     {section:'Reflections'},
-    {id:'lead-reflections',icon:'◷',label:'Team Reflections'},
-    {id:'my-reflections',icon:'◷',label:'My Reflections'},
+    {id:'lead-reflections',icon:'inbox',label:'Team Reflections'},
+    {id:'my-reflections',icon:'notebook',label:'My Reflections'},
   ],
 };
 
@@ -2335,7 +2357,8 @@ function buildNav(role){
     } else {
       const btn=document.createElement('button');
       btn.className='sb-item';btn.setAttribute('data-tip',item.label);btn.dataset.view=item.id;
-      btn.innerHTML=`<span class="sb-icon">${item.icon}</span><span class="sb-label">${item.label}</span>${item.badge?`<span class="sb-badge" id="badge-${item.id}">0</span>`:''}`;
+      const iconHtml = ICONS[item.icon] || item.icon || '';
+      btn.innerHTML=`<span class="sb-icon">${iconHtml}</span><span class="sb-label">${item.label}</span>${item.badge?`<span class="sb-badge" id="badge-${item.id}">0</span>`:''}`;
       btn.onclick=()=>{navTo(item.id);};
       nav.appendChild(btn);
     }
