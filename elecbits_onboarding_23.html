@@ -2799,6 +2799,22 @@ viewRenderers['admin-overview']=el=>{
 // ──────────────────────────────────────────────
 // ADMIN PEOPLE
 // ──────────────────────────────────────────────
+// Day number computed from joining date (Day 1 = join date).
+// Falls back to S.users[email].createdAt if p.joinDate missing.
+// Returns '' when no date is available.
+function _joinerDay(p){
+  var iso = p && p.joinDate ? p.joinDate : '';
+  if(!iso && window.S && S.users && p && p.email){
+    var pe = String(p.email).toLowerCase();
+    var u = S.users.find(function(u){ return u && u.email && String(u.email).toLowerCase()===pe; });
+    if(u && u.createdAt) iso = u.createdAt;
+  }
+  if(!iso) return '';
+  var t = Date.parse(iso);
+  if(isNaN(t)) return '';
+  var days = Math.floor((Date.now() - t) / 86400000) + 1;
+  return days >= 1 ? days : '';
+}
 viewRenderers['admin-people']=el=>{
   el.innerHTML=`<div class="flex-between" style="margin-bottom:14px">
     <div style="font-size:16px;font-weight:800;letter-spacing:-.4px">All Joiners</div>
@@ -2810,7 +2826,7 @@ viewRenderers['admin-people']=el=>{
       <tbody>${S.people.map(p=>`<tr>
         <td><div style="font-weight:600;color:var(--text)">${p.name}</div><div class="muted">${p.role||p.email}</div></td>
         <td>${p.dept}</td><td class="muted">${p.track}</td>
-        <td style="font-family:var(--mono);font-size:11px">${p.day}</td>
+        <td style="font-family:var(--mono);font-size:11px">${_joinerDay(p)}</td>
         <td><span class="mini-bar"><span class="mini-bar-fill" style="width:${p.progress}%"></span></span><span style="font-family:var(--mono);font-size:10px">${p.progress}%</span></td>
         <td class="muted">${p.mgr||'—'}</td>
         <td><span class="chip ${chipCol(p.onboardStatus||p.status)}">${p.onboardStatus||p.status}</span></td>
@@ -3728,6 +3744,7 @@ function addPerson(){
       const oldDept=p.dept;
       p.name=n;p.email=e;p.role=document.getElementById('np-role').value;
       p.dept=newDept;p.track=document.getElementById('np-track').value;p.mgr=document.getElementById('np-mgr').value;
+      p.joinDate=document.getElementById('np-date').value||'';
       document.getElementById('np-name').dataset.editId='';
       if(oldDept!==newDept) onDeptChange(p, oldDept);
       else save();
@@ -3739,7 +3756,8 @@ function addPerson(){
     }
   }
   const newPersonId = Date.now();
-  S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner'});
+  const newJoinDate = document.getElementById('np-date').value||'';
+  S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner',joinDate:newJoinDate});
   // SUPABASE: save new joiner to both people AND users tables
   if(window._supaReady){
     var newRole = document.getElementById('np-role').value || 'joiner';
@@ -4346,6 +4364,7 @@ function editPerson(id){
   document.getElementById('np-dept').value=p.dept;
   document.getElementById('np-track').value=p.track;
   document.getElementById('np-mgr').innerHTML=_mgrOptions(p.mgr||'');
+  document.getElementById('np-date').value=p.joinDate||'';
   // Store editing ID
   document.getElementById('np-name').dataset.editId=id;
   openModal('modal-add-person');
