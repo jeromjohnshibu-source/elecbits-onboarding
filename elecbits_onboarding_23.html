@@ -3856,7 +3856,26 @@ function addPerson(){
   const view=S.user?.role==='lead'?'lead-view':'admin-people';
   navTo(view);
 }
-function removePerson(id){if(!confirm('Remove this joiner?'))return;S.people=S.people.filter(p=>p.id!==id);save();const view=S.user?.role==='lead'?'lead-view':'admin-people';navTo(view);toast('Removed');}
+function removePerson(id){
+  if(!confirm('Remove this joiner?')) return;
+  // Capture email BEFORE we drop the row so we can also clean up the matching
+  // login account (S.users) and the Supabase rows. Without this, our new
+  // duplicate-email guard would block re-adding the same person.
+  var p = (S.people||[]).find(function(x){ return String(x.id)===String(id); });
+  var emailLower = (p && p.email || '').toLowerCase();
+  S.people = S.people.filter(function(x){ return String(x.id)!==String(id); });
+  if(emailLower){
+    S.users = (S.users||[]).filter(function(u){ return (u.email||'').toLowerCase()!==emailLower; });
+    if(window._supaReady){
+      sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
+      sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
+      sbDelete('progress','joiner_email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('progress delete error:',e); });
+    }
+  }
+  save();
+  const view=S.user?.role==='lead'?'lead-view':'admin-people';
+  navTo(view); toast('Removed');
+}
 function editPerson(id){const p=S.people.find(p=>p.id===id);if(p)alert(JSON.stringify(p,null,2));}
 
 function addSection(){
