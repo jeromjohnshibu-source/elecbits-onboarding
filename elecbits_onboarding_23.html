@@ -1255,6 +1255,23 @@ async function sbSaveDoc(moduleId, dept, docObj) {
   return null;
 }
 
+// ── DOCUMENTS: save a Drive/web link as a documents-table row (no Storage upload) ──
+// Reuses the documents schema so it flows back through sbLoadDocs and renders with a View button.
+async function sbSaveDocLink(moduleId, dept, link) {
+  try {
+    const dbResult = await sbPost('documents', {
+      module_id: moduleId, dept: dept,
+      title: link.title, filename: link.title,
+      file_data: null, file_url: link.url,
+      mime_type: 'link', file_size: '',
+      uploaded_by: (S.user&&S.user.email)||'',
+      uploaded_at: new Date().toISOString()
+    });
+    if (dbResult && dbResult.length) return dbResult[0];
+  } catch(e) { console.error('[ADD LINK ERROR]', e.message||e); toast('Could not save link'); }
+  return null;
+}
+
 // ── DOCUMENTS: load docs for a module+dept ──
 async function sbLoadDocs(moduleId, dept) {
   // Clean dept — remove spaces
@@ -4368,7 +4385,7 @@ function togglePD(){document.getElementById('pd').classList.toggle('open');}
 function closePD(){document.getElementById('pd').classList.remove('open');}
 document.addEventListener('click',e=>{if(!e.target.closest('.profile-wrap')&&!e.target.closest('.sb-user-row'))closePD();});
 function tIcon(t){return{video:'🎬',document:'📄',task:'✅',quiz:'❓'}[t]||'📄';}
-function fIcon(ext){return{pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📑',pptx:'📑',png:'🖼',jpg:'🖼',jpeg:'🖼',zip:'🗜',txt:'📃',csv:'📊'}[ext]||'📁';}
+function fIcon(ext){return{pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',ppt:'📑',pptx:'📑',png:'🖼',jpg:'🖼',jpeg:'🖼',zip:'🗜',txt:'📃',csv:'📊',link:'🔗'}[ext]||'📁';}
 function fmtSz(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 function fmtDate(d){if(!d)return'';try{return new Date(d).toLocaleString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch{return d;}}
 function sLabel(s){return{done:'Completed','in-progress':'In progress','not-started':'Not started',locked:'Locked'}[s]||s;}
@@ -4517,11 +4534,16 @@ function _renderDocsInner(mod, docsEl, uploadEl){
   // Upload section for admin/lead
   if(S.user?.role==='admin'||S.user?.role==='lead'){
     uploadEl.innerHTML=`<div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:8px">Upload presentation / document</div>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px">Upload presentation / document or add a link</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <input class="finput" id="doc-title-inp" placeholder="Document title" style="flex:1"/>
         <input type="file" id="doc-file-inp" style="display:none" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.jpg,.png" onchange="uploadModuleDoc('${mod.id}')"/>
         <button class="btn primary sm" onclick="document.getElementById('doc-file-inp').click()">📎 Upload</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="finput" id="doc-link-name" placeholder="Link name (e.g. Onboarding deck)" style="flex:1"/>
+        <input class="finput" id="doc-link-url" placeholder="Paste Drive / web URL" style="flex:1.5"/>
+        <button class="btn outline sm" onclick="addModuleLink('${mod.id}')">🔗 Add link</button>
       </div>
     </div>`;
   } else {
@@ -4581,6 +4603,38 @@ function uploadModuleDoc(mid){
     }
   };
   reader.readAsDataURL(f);
+}
+function addModuleLink(mid){
+  var name = (document.getElementById('doc-link-name')||{}).value || '';
+  var url  = (document.getElementById('doc-link-url') ||{}).value || '';
+  name = name.trim(); url = url.trim();
+  if(!name){ toast('Please enter a link name'); return; }
+  if(!url){  toast('Please paste the link URL');  return; }
+  if(!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  const mod=findMod(mid); if(!mod) return;
+  if(!mod.docs) mod.docs=[];
+  // Tag by the module's section dept so joiners in that dept see it (matches uploadModuleDoc).
+  var modSec=null;
+  S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) modSec=s; }); });
+  var dept = modSec
+    ? ((modSec.dept==='all'||modSec.dept==='All') ? 'All' : String(modSec.dept).replace(/\s+/g,''))
+    : ((window.S&&S.user&&S.user.dept) ? S.user.dept.replace(/\s+/g,'') : 'All');
+  var linkObj = { title:name, filename:name, ext:'link', isUrl:true, data:url, mime:'link', size:'', date:new Date().toLocaleDateString('en-IN') };
+  function _commit(){
+    mod.docs.push(linkObj);
+    save(); renderModuleDocs(mod);
+    var n=document.getElementById('doc-link-name'); if(n) n.value='';
+    var u=document.getElementById('doc-link-url');  if(u) u.value='';
+    toast('Link added ✓');
+  }
+  if(window._supaReady){
+    sbSaveDocLink(mid, dept, {title:name, url:url}).then(function(row){
+      if(row && row.id) linkObj.id = row.id;
+      _commit();
+    }).catch(function(e){ console.error('addModuleLink:',e); toast('Could not save link'); });
+  } else {
+    _commit();
+  }
 }
 function removeModuleDoc(mid,idx){
   const mod=findMod(mid); if(!mod||!mod.docs) return;
