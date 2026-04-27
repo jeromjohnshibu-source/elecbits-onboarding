@@ -3768,6 +3768,17 @@ function addPerson(){
   if(!n||!e){toast('Name & email required');return;}
   const editId=document.getElementById('np-name').dataset.editId;
   const newDept=document.getElementById('np-dept').value;
+  const emailLowerNew=e.toLowerCase();
+  // Block duplicates across both joiners (people) and login accounts (users).
+  // On edit, allow the row being edited to keep its own email.
+  var dupPerson=(S.people||[]).find(function(p){ return (p.email||'').toLowerCase()===emailLowerNew && (!editId || String(p.id)!==String(editId)); });
+  var dupUser  =(S.users ||[]).find(function(u){ return (u.email||'').toLowerCase()===emailLowerNew; });
+  if(editId && dupUser){
+    // Editing a joiner whose own user-row shares this email is fine — only flag a different user.
+    var editingPerson=(S.people||[]).find(function(p){ return String(p.id)===String(editId); });
+    if(editingPerson && (editingPerson.email||'').toLowerCase()===emailLowerNew) dupUser=null;
+  }
+  if(dupPerson||dupUser){ alert('Email ID already exists. Please use unique identifiers for email.'); return; }
   if(editId){
     const p=S.people.find(p=>String(p.id)===String(editId));
     if(p){
@@ -5054,8 +5065,8 @@ function saveUser(){
     var oldEmail = (u.email||'').toLowerCase();
     var newEmail = email.toLowerCase();
     // If email changed, make sure it doesn't collide with another user
-    if(oldEmail!==newEmail && S.users.find(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()===newEmail; })){
-      alert('Another user already uses this email.'); return;
+    if(oldEmail!==newEmail && (S.users.find(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()===newEmail; }) || (S.people||[]).find(function(p){ return (p.email||'').toLowerCase()===newEmail; }))){
+      alert('Email ID already exists. Please use unique identifiers for email.'); return;
     }
     u.name=name;u.email=newEmail;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active;
     // Keep linked S.people row in sync (joiners have a parallel record keyed by email)
@@ -5072,8 +5083,8 @@ function saveUser(){
         .catch(function(e){ console.warn('people PATCH error:',e); });
     }
   } else {
-    // Check duplicate email (case-insensitive)
-    if(S.users.find(function(x){ return (x.email||'').toLowerCase()===email; })){ alert('A user with this email already exists.'); return; }
+    // Check duplicate email (case-insensitive) across users AND people
+    if(S.users.find(function(x){ return (x.email||'').toLowerCase()===email; }) || (S.people||[]).find(function(p){ return (p.email||'').toLowerCase()===email; })){ alert('Email ID already exists. Please use unique identifiers for email.'); return; }
     S.users.push({ id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) });
     // Also add to people list if joiner
     if(role==='joiner' && !S.people.find(function(p){ return (p.email||'').toLowerCase()===email; })){
