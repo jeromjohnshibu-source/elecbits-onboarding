@@ -5009,6 +5009,113 @@ viewRenderers['home']=el=>{
   el.style.background='var(--navy2)';
   el.style.height='100%';
 
+  // ── Personalized 'Day 1' welcome block — only for joiners ──
+  var welcomeHtml = '';
+  if(u.role==='joiner'){
+    var hr = new Date().getHours();
+    var greet = hr<12 ? 'Good morning' : hr<18 ? 'Good afternoon' : 'Good evening';
+    var p = (S.people||[]).find(function(x){ return x.email && x.email.toLowerCase()===(u.email||'').toLowerCase(); });
+    var dayN = (typeof _joinerDay==='function') ? _joinerDay(p||u) : '';
+    var dayLine = dayN ? ('Day ' + dayN + ' at Elecbits') : 'Welcome to Elecbits';
+    var dept = (p && p.dept) || u.dept || 'Hardware';
+    var track = (p && p.track) || 'Full Onboarding';
+    // Progress
+    var allMods = (S.sections||[]).flatMap(function(s){ return s.modules||[]; });
+    var done = allMods.filter(function(m){ return m.status==='done'; }).length;
+    var pct = allMods.length ? Math.round(done/allMods.length*100) : 0;
+    // Next-up modules (not done, not locked) — first three in section order
+    var upcoming = allMods.filter(function(m){ return m.status!=='done' && m.status!=='locked'; }).slice(0,3);
+    // Encouragement copy that adapts to progress
+    var pulse = pct===0
+      ? 'Brand new — let\'s get the first one done today.'
+      : pct<30
+        ? 'Strong start. Keep the momentum going.'
+        : pct<70
+          ? 'You\'re right on pace. Halfway there.'
+          : pct<100
+            ? 'Almost there — one final push.'
+            : 'Onboarding complete. Welcome to the team. 🎉';
+    // Manager — p.mgr can be a name or an email; resolve against S.users for the designation
+    var mgrRaw = (p && p.mgr) || u.mgr || '';
+    var mgrUser = mgrRaw ? (S.users||[]).find(function(x){
+      var em=(x.email||'').toLowerCase(), nm2=(x.name||'').toLowerCase(), q=String(mgrRaw).toLowerCase();
+      return em===q || nm2===q;
+    }) : null;
+    var mgrName = (mgrUser && mgrUser.name) || mgrRaw || '—';
+    var mgrDesig = (mgrUser && mgrUser.designation) || 'Reporting Manager';
+    var mgrIni = mgrName.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
+    function _fmtSession(iso){
+      if(!iso) return '';
+      var d = new Date(iso); if(isNaN(+d)) return '';
+      var diff = Math.ceil((d - new Date())/86400000);
+      var when = diff===0 ? 'today' : diff===1 ? 'tomorrow' : diff>1 ? 'in '+diff+' days' : Math.abs(diff)+' day'+(Math.abs(diff)>1?'s':'')+' ago';
+      var nice = d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+      return when + ' · ' + nice;
+    }
+    var modCards = upcoming.map(function(m, i){
+      var subtitle = m.date
+        ? 'Session ' + _fmtSession(m.date) + (m.host?' · '+m.host:'')
+        : 'Self-paced · ' + (m.time||30) + ' min';
+      var cta = i===0
+        ? '<button class="btn primary sm" onclick="openModuleById(\''+m.id+'\')">▶ Start now →</button>'
+        : '<button class="btn outline xs" onclick="openModuleById(\''+m.id+'\')">Open →</button>';
+      return ''
+        + '<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;'+(i===0?'box-shadow:0 0 0 1px rgba(61,111,232,.25);':'')+ '">'
+        +   '<div style="width:34px;height:34px;border-radius:8px;background:'+(i===0?'linear-gradient(145deg,#4B7CF3,#2558D4)':'var(--bg3)')+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-family:var(--mono);font-size:13px;flex-shrink:0">'+(i+1)+'</div>'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+m.title+'</div>'
+        +     '<div class="muted" style="margin-top:2px">'+subtitle+'</div>'
+        +   '</div>'
+        +   cta
+        + '</div>';
+    }).join('');
+    if(!modCards){
+      modCards = '<div class="muted" style="padding:14px;text-align:center;background:var(--bg2);border:1px dashed var(--border);border-radius:12px">All caught up — no modules waiting on you.</div>';
+    }
+    welcomeHtml = ''
+      + '<div style="padding:32px 36px 24px;background:linear-gradient(180deg,var(--navy) 0%,var(--navy2) 100%);border-bottom:1px solid var(--navy-b)">'
+      +   '<div style="max-width:920px;margin:0 auto">'
+      // Header
+      +     '<div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">'
+      +       '<span style="font-size:11px;color:rgba(255,255,255,.45);font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase">'+dayLine+'</span>'
+      +       '<span style="height:1px;flex:1;background:rgba(255,255,255,.08)"></span>'
+      +       '<span class="chip blue" style="font-size:10px">'+dept+'</span>'
+      +       '<span class="chip" style="font-size:10px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.08)">'+track+'</span>'
+      +     '</div>'
+      +     '<div style="font-size:30px;font-weight:800;color:#fff;letter-spacing:-.8px;line-height:1.1">'+greet+', '+nm+' 👋</div>'
+      +     '<div style="font-size:14px;color:rgba(255,255,255,.55);margin-top:6px">'+pulse+'</div>'
+      // Progress + manager row
+      +     '<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:22px">'
+      +       '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px 20px">'
+      +         '<div style="display:flex;align-items:baseline;gap:10px">'
+      +           '<div style="font-size:38px;font-weight:800;color:#fff;letter-spacing:-1.5px;line-height:1">'+pct+'%</div>'
+      +           '<div style="font-size:11px;color:rgba(255,255,255,.4);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase">complete</div>'
+      +         '</div>'
+      +         '<div style="height:6px;border-radius:3px;background:rgba(255,255,255,.06);margin-top:12px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#4B7CF3,#5582ef);transition:width .8s"></div></div>'
+      +         '<div class="muted" style="margin-top:8px;font-size:11px">'+done+' of '+allMods.length+' modules done</div>'
+      +       '</div>'
+      +       '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:14px">'
+      +         '<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(145deg,#4B7CF3,#2558D4);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+mgrIni+'</div>'
+      +         '<div style="flex:1;min-width:0">'
+      +           '<div style="font-size:10px;color:rgba(255,255,255,.4);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase">Reporting to</div>'
+      +           '<div style="font-size:14px;font-weight:700;color:#fff;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+mgrName+'</div>'
+      +           '<div class="muted" style="margin-top:1px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+mgrDesig+'</div>'
+      +         '</div>'
+      +       '</div>'
+      +     '</div>'
+      // Next-up modules
+      +     '<div style="margin-top:24px">'
+      +       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+      +         '<div style="font-size:11px;color:rgba(255,255,255,.45);font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase">Your next steps</div>'
+      +         '<button class="btn ghost xs" onclick="navTo(\'modules\')">See all modules →</button>'
+      +       '</div>'
+      +       modCards
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+  el._welcomeHtml = welcomeHtml;
+
   // Build all 11 section HTML strings using only double-quoted attributes
   var s = [];
 
@@ -5136,8 +5243,11 @@ viewRenderers['home']=el=>{
         + '<button class="ob-cta-btn" onclick="navTo(&quot;dashboard&quot;)">Go to Dashboard &#8594;</button>'
         + '</div>';
 
-  // Render
-  el.innerHTML = '<div class="ob-wrap">' + s.join('') + '</div>';
+  // Render — personalized welcome (joiners) sits above the Elecbits story
+  var storyDivider = el._welcomeHtml
+    ? '<div style="text-align:center;padding:28px 16px 8px;color:rgba(255,255,255,.35);font-size:11px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase">↓ The story behind Elecbits</div>'
+    : '';
+  el.innerHTML = (el._welcomeHtml||'') + storyDivider + '<div class="ob-wrap">' + s.join('') + '</div>';
 
   // Intersection Observer — fade each section in on scroll
   var io = new IntersectionObserver(function(entries){
