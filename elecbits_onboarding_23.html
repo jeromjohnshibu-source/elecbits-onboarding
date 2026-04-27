@@ -3055,7 +3055,8 @@ viewRenderers['notifications']=el=>{
 // ─── LEAD DASHBOARD ───────────────────────────
 viewRenderers['lead-dashboard']=el=>{
   const dept=S.user?.dept||'Hardware';
-  const team=S.people.filter(p=>p.dept===dept);
+  const meEmail=(S.user?.email||'').toLowerCase();
+  const team=S.people.filter(p=>p.dept===dept && (p.email||'').toLowerCase()!==meEmail);
   const st=computeStats(dept);
   const readyForProject=team.filter(p=>p.onboardStatus==='Completed'||p.onboardStatus==='Project assigned').length;
   const inProgress=team.filter(p=>p.onboardStatus==='In progress').length;
@@ -3122,7 +3123,8 @@ viewRenderers['lead-dashboard']=el=>{
 // ─── LEAD MEMBERS (table rows) ─────────────────
 viewRenderers['lead-members']=el=>{
   const dept=S.user?.dept||'Hardware';
-  const team=S.people.filter(p=>p.dept===dept);
+  const meEmail=(S.user?.email||'').toLowerCase();
+  const team=S.people.filter(p=>p.dept===dept && (p.email||'').toLowerCase()!==meEmail);
   const statuses=['New joiner','In progress','Running delayed','Completed','Project assigned'];
   el.innerHTML=`
     <div class="flex-between" style="margin-bottom:16px">
@@ -3168,7 +3170,8 @@ viewRenderers['lead-members']=el=>{
 // ─── LEAD PROGRESS ─────────────────────────────
 viewRenderers['lead-view']=viewRenderers['lead-progress']=el=>{
   const dept=S.user?.dept||'Hardware';
-  const team=S.people.filter(p=>p.dept===dept);
+  const meEmail=(S.user?.email||'').toLowerCase();
+  const team=S.people.filter(p=>p.dept===dept && (p.email||'').toLowerCase()!==meEmail);
   const st=computeStats(dept);
   function estDate(p){const rem=100-p.progress;const days=Math.ceil(rem/3.5);const d=new Date();d.setDate(d.getDate()+days);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
   const totalMods=st.total; const doneMods=st.done; const ipMods=st.inProg;
