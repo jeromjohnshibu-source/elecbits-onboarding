@@ -3801,24 +3801,33 @@ function addPerson(){
   }
   const newPersonId = Date.now();
   const newJoinDate = document.getElementById('np-date').value||'';
+  // One password used everywhere — Supabase users row, local S.users row, and the credentials alert.
+  // Prefer whatever the admin typed in the modal; otherwise generate a memorable random one.
+  var typedPw = ((document.getElementById('np-pass')||{}).value||'').trim();
+  var joinerPw;
+  if(typedPw){
+    joinerPw = typedPw;
+  } else {
+    var _words=['launch','build','ship','code','make','grow','lead','spark','start','craft'];
+    joinerPw = _words[Math.floor(Math.random()*_words.length)] + Math.floor(Math.random()*900+100);
+  }
   S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner',joinDate:newJoinDate});
   // SUPABASE: save new joiner to both people AND users tables
   if(window._supaReady){
-    var newRole = document.getElementById('np-role').value || 'joiner';
+    var newDesig = document.getElementById('np-role').value || 'Team Member';
     var newMgr  = document.getElementById('np-mgr').value || '';
     var newTrack= document.getElementById('np-track').value || 'Full Onboarding';
-    var newPass = document.getElementById('np-pass') ? document.getElementById('np-pass').value : 'pass123';
     // Save to people table
     sbUpsert('people', {
-      name:n, email:e, role:newRole, dept:newDept,
-      designation:document.getElementById('np-desig')?document.getElementById('np-desig').value:'',
+      name:n, email:e, role:newDesig, dept:newDept,
+      designation:newDesig,
       mgr:newMgr, track:newTrack, day:1, progress:0,
       onboard_status:'New joiner', active:true
     }).catch(function(err){ console.warn('people save error:', err); });
-    // Save to users table so they can log in
+    // Save to users table so they can log in — same password we'll show the admin.
     sbUpsert('users', {
-      name:n, email:e, password:newPass, role:newRole,
-      dept:newDept, designation:'', mgr:newMgr, active:true
+      name:n, email:e, password:joinerPw, role:'joiner',
+      dept:newDept, designation:newDesig, mgr:newMgr, active:true
     }).catch(function(err){ console.warn('users save error:', err); });
     // Clear any stale progress
     sbDelete('progress', 'joiner_email=eq.'+encodeURIComponent(e.toLowerCase()))
@@ -3827,15 +3836,13 @@ function addPerson(){
   if(!S.users) S.users=[];
   const emailLower = e.toLowerCase();
   if(!S.users.find(function(u){ return u.email.toLowerCase()===emailLower; })){
-    var words=['launch','build','ship','code','make','grow','lead','spark','start','craft'];
-    var randPw = words[Math.floor(Math.random()*words.length)] + Math.floor(Math.random()*900+100);
-    S.users.push({id:newPersonId+1,name:n,email:emailLower,password:randPw,role:'joiner',dept:newDept,designation:document.getElementById('np-role').value||'Team Member',mgr:document.getElementById('np-mgr').value,active:true,mustChangePassword:true,createdAt:new Date().toISOString().slice(0,10)});
+    S.users.push({id:newPersonId+1,name:n,email:emailLower,password:joinerPw,role:'joiner',dept:newDept,designation:document.getElementById('np-role').value||'Team Member',mgr:document.getElementById('np-mgr').value,active:true,mustChangePassword:true,createdAt:new Date().toISOString().slice(0,10)});
     // Show credentials in a clear modal instead of a disappearing toast
     setTimeout(function(){
       var msg = '✅ Joiner added successfully!\n\n'
         + '━━━━━━━━━━━━━━━━━━━━━━\n'
         + '📧 Email:    ' + emailLower + '\n'
-        + '🔑 Password: ' + randPw + '\n'
+        + '🔑 Password: ' + joinerPw + '\n'
         + '━━━━━━━━━━━━━━━━━━━━━━\n\n'
         + 'Share these credentials with the joiner.\n'
         + 'They will be asked to set a new password on first login.\n\n'
