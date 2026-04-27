@@ -4803,11 +4803,13 @@ function loginWithCredentials(){
     {id:3,name:'Aanya Kumar', email:'aanya@elecbits.in', password:'join123', role:'joiner',dept:'Hardware',           designation:'Associate Hardware Engineer', mgr:'Nikhil Rawat', active:true},
   ];
   if(!S.users || S.users.length===0) S.users = _defaultUsers;
-  // Always make sure the 3 core admin accounts exist (in case localStorage was cleared)
+  // Always make sure the core admin/lead accounts exist (in case localStorage was cleared).
+  // Match by id too — so a default lead whose email was edited isn't re-inserted as a duplicate.
   _defaultUsers.forEach(function(du){
-    if(!S.users.find(function(u){ return u.email===du.email; })){
-      S.users.push(du);
-    }
+    var exists = S.users.find(function(u){
+      return String(u.id)===String(du.id) || (u.email||'').toLowerCase()===du.email.toLowerCase();
+    });
+    if(!exists) S.users.push(du);
   });
   // Try Supabase first, fall back to local instantly on any failure
   if(window._supaReady){
@@ -4853,7 +4855,10 @@ function _doLocalLogin(email, pass){
   ];
   if(!S.users || S.users.length===0) S.users = _defaultUsers;
   _defaultUsers.forEach(function(du){
-    if(!S.users.find(function(u){ return u.email===du.email; })) S.users.push(du);
+    var exists = S.users.find(function(u){
+      return String(u.id)===String(du.id) || (u.email||'').toLowerCase()===du.email.toLowerCase();
+    });
+    if(!exists) S.users.push(du);
   });
 
   var found = S.users.find(function(u){
@@ -4909,7 +4914,10 @@ function _mgrOptions(selected){
   ];
   if(!S.users) S.users=[];
   _defaults.forEach(function(d){
-    if(!S.users.find(function(u){ return u.email===d.email; })){
+    var exists = S.users.find(function(u){
+      return String(u.id)===String(d.id) || (u.email||'').toLowerCase()===d.email.toLowerCase();
+    });
+    if(!exists){
       S.users.push(Object.assign({password:'',dept:'',mgr:'',active:true,createdAt:'2024-01-01'}, d));
     }
   });
@@ -4923,6 +4931,18 @@ function _mgrOptions(selected){
 }
 viewRenderers['admin-users']=function(el){
   if(!S.users) S.users=[];
+  // Dedupe: collapse any rows that share the same email (case-insensitive),
+  // keeping the most recently edited one (last in the array wins).
+  (function dedupeUsers(){
+    var seen = {}; var out = [];
+    for(var i=S.users.length-1; i>=0; i--){
+      var u = S.users[i]; var k = (u.email||'').toLowerCase();
+      if(!k){ out.unshift(u); continue; }
+      if(seen[k]) continue;
+      seen[k] = true; out.unshift(u);
+    }
+    if(out.length !== S.users.length){ S.users = out; save(); }
+  })();
 
   function roleColor(r){
     return r==='admin'?'red':r==='lead'?'blue':'green';
@@ -4996,7 +5016,7 @@ function openAddUser(){
 }
 
 function openEditUser(id){
-  var u = (S.users||[]).find(function(x){ return x.id===id; });
+  var u = (S.users||[]).find(function(x){ return String(x.id)===String(id); });
   if(!u) return;
   document.getElementById('um-modal-title').textContent = 'Edit User';
   document.getElementById('um-id').value = u.id;
@@ -5028,16 +5048,44 @@ function saveUser(){
   if(!S.users) S.users=[];
 
   if(id){
-    // Edit existing
-    var u = S.users.find(function(x){ return x.id===parseInt(id); });
-    if(u){ u.name=name;u.email=email;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active; }
+    // Edit existing — match by stringified id so number/string/uuid all work
+    var u = S.users.find(function(x){ return String(x.id)===String(id); });
+    if(!u){ alert('Could not find this user to update. Please refresh and try again.'); return; }
+    var oldEmail = (u.email||'').toLowerCase();
+    var newEmail = email.toLowerCase();
+    // If email changed, make sure it doesn't collide with another user
+    if(oldEmail!==newEmail && S.users.find(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()===newEmail; })){
+      alert('Another user already uses this email.'); return;
+    }
+    u.name=name;u.email=newEmail;u.password=pass;u.role=role;u.dept=dept;u.designation=desig;u.mgr=mgr;u.active=active;
+    // Keep linked S.people row in sync (joiners have a parallel record keyed by email)
+    if(S.people && S.people.length){
+      var p = S.people.find(function(p){ return (p.email||'').toLowerCase()===oldEmail; });
+      if(p){ p.name=name; p.email=newEmail; p.dept=dept; p.mgr=mgr; p.designation=desig; p.role=role; }
+    }
+    if(window._supaReady){
+      // Update by old email so we hit the existing Supabase row instead of inserting a new one
+      var patch = { name:name, email:newEmail, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active };
+      sbFetch('users', { method:'PATCH', body:patch, filter:'email=eq.'+encodeURIComponent(oldEmail) })
+        .catch(function(e){ console.warn('users PATCH error:',e); });
+      sbFetch('people', { method:'PATCH', body:{ name:name, email:newEmail, dept:dept, mgr:mgr, designation:desig, role:role }, filter:'email=eq.'+encodeURIComponent(oldEmail) })
+        .catch(function(e){ console.warn('people PATCH error:',e); });
+    }
   } else {
-    // Check duplicate email
-    if(S.users.find(function(x){ return x.email===email; })){ alert('A user with this email already exists.'); return; }
+    // Check duplicate email (case-insensitive)
+    if(S.users.find(function(x){ return (x.email||'').toLowerCase()===email; })){ alert('A user with this email already exists.'); return; }
     S.users.push({ id:Date.now(), name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active, createdAt:new Date().toISOString().slice(0,10) });
     // Also add to people list if joiner
-    if(role==='joiner' && !S.people.find(function(p){ return p.email===email; })){
+    if(role==='joiner' && !S.people.find(function(p){ return (p.email||'').toLowerCase()===email; })){
       S.people.push({ id:Date.now()+1, name:name, email:email, role:desig||'Team Member', dept:dept, track:'Fresher', mgr:mgr, day:1, progress:0, status:'New joiner', onboardStatus:'New joiner' });
+    }
+    if(window._supaReady){
+      sbUpsert('users',  { name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active })
+        .catch(function(e){ console.warn('users upsert error:',e); });
+      if(role==='joiner'){
+        sbUpsert('people',{ name:name, email:email, role:role, dept:dept, designation:desig, mgr:mgr, track:'Full Onboarding', day:1, active:true })
+          .catch(function(e){ console.warn('people upsert error:',e); });
+      }
     }
   }
   save();
@@ -5047,9 +5095,18 @@ function saveUser(){
 }
 
 function deleteUser(id){
-  var u = (S.users||[]).find(function(x){ return x.id===id; });
+  var u = (S.users||[]).find(function(x){ return String(x.id)===String(id); });
   if(!u || !confirm('Delete user '+u.name+'? They will no longer be able to log in.')) return;
-  S.users = S.users.filter(function(x){ return x.id!==id; });
+  var emailLower = (u.email||'').toLowerCase();
+  // Filter by id AND by email so a stale duplicate row with the same email also gets removed
+  S.users = S.users.filter(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()!==emailLower; });
+  if(S.people && emailLower){
+    S.people = S.people.filter(function(p){ return (p.email||'').toLowerCase()!==emailLower; });
+  }
+  if(window._supaReady && emailLower){
+    sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
+    sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
+  }
   save(); navTo('admin-users'); toast('User deleted');
 }
 
