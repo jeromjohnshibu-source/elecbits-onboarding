@@ -952,6 +952,10 @@ to{opacity:1;transform:translateY(0)}}
       <input type="file" id="res-file-input" style="display:none" multiple onchange="handleFSel(event)"/>
       <div id="sel-files" style="margin-top:8px"></div>
     </div>
+    <div class="fg">
+      <label class="flabel">Or paste a Drive / web URL <span class="muted">(instead of a file)</span></label>
+      <input class="finput" id="res-link-url" placeholder="https://drive.google.com/…"/>
+    </div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-add-resource')">Cancel</button><button class="btn primary" onclick="uploadResources();closeModal('modal-add-resource')">Upload</button></div>
   </div>
 </div>
@@ -1384,6 +1388,24 @@ async function sbSaveResource(file, meta) {
     console.error('[RESOURCE ERROR]', e);
     return null;
   }
+}
+
+// ── RESOURCES: save a Drive/web link (no Storage upload) ──
+async function sbSaveResourceLink(meta) {
+  try {
+    const dept = (meta.dept && String(meta.dept).trim()) || 'All';
+    const rows = await sbPost('resources', {
+      title: meta.title || meta.url,
+      filename: meta.title || meta.url,
+      ext: 'link',
+      file_size: '',
+      dept: dept,
+      description: meta.desc || '',
+      file_url: meta.url,
+      uploaded_by: (S.user && S.user.email) || ''
+    });
+    return rows && rows[0] ? rows[0] : null;
+  } catch(e) { console.error('[RESOURCE LINK ERROR]', e); return null; }
 }
 
 // ── RESOURCES: load, scoped by role ──
@@ -3335,7 +3357,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
     <div class="slabel" style="margin-top:20px">Resources for joiners</div>
     <div class="flex-between" style="margin-bottom:8px">
       <div class="muted">Visible to all ${dept} joiners under Resources</div>
-      <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';renderSelF();openModal('modal-add-resource')">+ Upload</button>
+      <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';(document.getElementById('res-link-url')||{}).value='';renderSelF();openModal('modal-add-resource')">+ Upload</button>
     </div>
     ${S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All').map(r=>`<div class="doc-card">
       <div class="doc-thumb">${fIcon(r.ext)}</div>
@@ -3749,9 +3771,33 @@ function rmFile(i){_selFiles.splice(i,1);renderSelF();}
 function uploadResources(){
   const t=document.getElementById('res-title')?.value.trim();
   if(!t){toast('Please enter a title');return;}
-  if(!_selFiles.length){toast('Please select files');return;}
   const dept=document.getElementById('res-dept')?.value||'Hardware';
   const desc=document.getElementById('res-desc')?.value||'';
+  // URL-only path: if the user pasted a link instead of selecting files, save a link resource.
+  var linkInp = document.getElementById('res-link-url');
+  var linkUrl = linkInp ? (linkInp.value||'').trim() : '';
+  if(!_selFiles.length && linkUrl){
+    if(!/^https?:\/\//i.test(linkUrl)) linkUrl = 'https://' + linkUrl;
+    var localId = 'res'+Date.now()+Math.random();
+    S.resources.push({id:localId, title:t, filename:t, ext:'link', size:'', dept:dept, desc:desc, date:new Date().toLocaleDateString('en-IN'), data:linkUrl, isUrl:true});
+    save();
+    if(linkInp) linkInp.value='';
+    toast('Link added ✓');
+    navTo('lead-resources');
+    if(window._supaReady){
+      sbSaveResourceLink({title:t, url:linkUrl, dept:dept, desc:desc}).then(function(row){
+        if(!row) return;
+        var idx = S.resources.findIndex(function(r){ return r.id===localId; });
+        if(idx>-1){
+          S.resources[idx].id = row.id;
+          save();
+          if(typeof renderView==='function') try{ renderView(); }catch(e){}
+        }
+      }).catch(function(e){ console.warn('sbSaveResourceLink error:',e); });
+    }
+    return;
+  }
+  if(!_selFiles.length){toast('Please select files or paste a URL');return;}
   const files=_selFiles.slice();
   // Optimistic local entries so the UI updates immediately
   const localIds=files.map(f=>{
