@@ -936,6 +936,18 @@ to{opacity:1;transform:translateY(0)}}
   </div>
 </div>
 
+<!-- ══ CONFIRM DELETE (centered modal used by every delete/remove action) ══ -->
+<div class="modal-backdrop" id="modal-confirm-delete">
+  <div class="modal" style="width:420px;max-width:90vw">
+    <div class="modal-hd"><h3 id="cd-title">Confirm</h3><button class="modal-close" onclick="closeModal('modal-confirm-delete')">✕</button></div>
+    <div id="cd-msg" style="font-size:13px;color:var(--text2);line-height:1.6;padding:8px 0 16px">Are you sure?</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('modal-confirm-delete')">Cancel</button>
+      <button class="btn primary" id="cd-confirm-btn" style="background:var(--red);border-color:var(--red)">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ADD RESOURCE LINK (admin/lead) ══ -->
 <div class="modal-backdrop" id="modal-add-resource-link">
   <div class="modal">
@@ -3378,7 +3390,7 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
       <div class="doc-thumb">${fIcon(r.ext)}</div>
       <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${r.title}</div><div class="muted">${r.filename} · ${r.date}</div></div>
       ${r.data?`<button class="btn outline xs" onclick="window.open('${r.data}','_blank')">👁 View</button>`:''}
-      <button class="btn ghost xs" onclick="delRes('${r.id}');navTo('lead-onboarding')">✕</button>
+      <button class="btn ghost xs" onclick="delRes('${r.id}')">✕</button>
     </div>`).join('')||'<div class="muted" style="padding:8px 0">No resources. Click "+ Upload" to add one.</div>'}`;
 
   // Wire up drag-and-drop AFTER rendering
@@ -3875,11 +3887,43 @@ function uploadResources(){
     toast('Resources uploaded ✓');
   }
 }
-function delRes(id){
-  S.resources=S.resources.filter(r=>r.id!==id);save();
-  if(window._supaReady && id && !String(id).startsWith('res')){
-    sbDeleteResource(id).catch(function(e){ console.warn('sbDeleteResource error:',e); });
+// Reusable centered confirm dialog used by every delete/remove action.
+// Replaces native browser confirm() so the prompt always sits in the middle of the page.
+// Usage: confirmDelete('Remove this joiner?', function(){ /* actually delete */ }, {title, confirmLabel});
+function confirmDelete(message, onConfirm, opts){
+  opts = opts || {};
+  var titleEl = document.getElementById('cd-title');
+  var msgEl   = document.getElementById('cd-msg');
+  var btn     = document.getElementById('cd-confirm-btn');
+  if(!titleEl || !msgEl || !btn){
+    // Fallback if the modal somehow isn't in the DOM yet
+    if(window.confirm(message)) onConfirm && onConfirm();
+    return;
   }
+  titleEl.textContent = opts.title || 'Confirm';
+  msgEl.textContent   = message || 'Are you sure?';
+  // Replace the button to drop any prior click handlers
+  var clone = btn.cloneNode(true);
+  if(opts.confirmLabel) clone.textContent = opts.confirmLabel;
+  btn.parentNode.replaceChild(clone, btn);
+  clone.addEventListener('click', function(){
+    closeModal('modal-confirm-delete');
+    if(typeof onConfirm==='function') onConfirm();
+  });
+  openModal('modal-confirm-delete');
+}
+
+function delRes(id){
+  var r=(S.resources||[]).find(function(x){ return x.id===id; });
+  var label = r && r.title ? '"'+r.title+'"' : 'this resource';
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    S.resources=S.resources.filter(r=>r.id!==id);save();
+    if(window._supaReady && id && !String(id).startsWith('res')){
+      sbDeleteResource(id).catch(function(e){ console.warn('sbDeleteResource error:',e); });
+    }
+    if(typeof renderView==='function') try{ renderView(); }catch(e){}
+    toast('Removed');
+  });
 }
 
 function addPerson(){
@@ -3973,24 +4017,23 @@ function addPerson(){
   navTo(view);
 }
 function removePerson(id){
-  if(!confirm('Remove this joiner?')) return;
-  // Capture email BEFORE we drop the row so we can also clean up the matching
-  // login account (S.users) and the Supabase rows. Without this, our new
-  // duplicate-email guard would block re-adding the same person.
   var p = (S.people||[]).find(function(x){ return String(x.id)===String(id); });
-  var emailLower = (p && p.email || '').toLowerCase();
-  S.people = S.people.filter(function(x){ return String(x.id)!==String(id); });
-  if(emailLower){
-    S.users = (S.users||[]).filter(function(u){ return (u.email||'').toLowerCase()!==emailLower; });
-    if(window._supaReady){
-      sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
-      sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
-      sbDelete('progress','joiner_email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('progress delete error:',e); });
+  var label = p && p.name ? p.name : 'this joiner';
+  confirmDelete('Are you sure you want to remove '+label+'? Their login account and progress will also be deleted.', function(){
+    var emailLower = (p && p.email || '').toLowerCase();
+    S.people = S.people.filter(function(x){ return String(x.id)!==String(id); });
+    if(emailLower){
+      S.users = (S.users||[]).filter(function(u){ return (u.email||'').toLowerCase()!==emailLower; });
+      if(window._supaReady){
+        sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
+        sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
+        sbDelete('progress','joiner_email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('progress delete error:',e); });
+      }
     }
-  }
-  save();
-  const view=S.user?.role==='lead'?'lead-view':'admin-people';
-  navTo(view); toast('Removed');
+    save();
+    var view = S.user && S.user.role==='lead' ? 'lead-view' : 'admin-people';
+    navTo(view); toast('Removed');
+  }, {confirmLabel:'Remove'});
 }
 function editPerson(id){const p=S.people.find(p=>p.id===id);if(p)alert(JSON.stringify(p,null,2));}
 
@@ -3999,7 +4042,14 @@ function addSection(){
   S.sections.push({id:'s'+Date.now(),title:t,dept:document.getElementById('sec-dept').value,modules:[]});
   save();closeModal('modal-add-section');navTo('module-builder');toast('Section added ✓');
 }
-function delSection(id){if(!confirm('Delete section?'))return;S.sections=S.sections.filter(s=>s.id!==id);save();navTo('module-builder');}
+function delSection(id){
+  var s=(S.sections||[]).find(function(x){ return x.id===id; });
+  var label = s && s.title ? '"'+s.title+'"' : 'this section';
+  confirmDelete('Are you sure you want to delete '+label+'? All modules inside it will be removed.', function(){
+    S.sections=S.sections.filter(function(x){ return x.id!==id; });
+    save(); navTo('module-builder'); toast('Section deleted');
+  });
+}
 
 function openAM(sid){document.getElementById('am-sid').value=sid;openModal('modal-add-module');}
 function addModuleToSection(){
@@ -4060,7 +4110,15 @@ function saveEditModule(){
   }
   closeModal('modal-edit-module');navTo('module-builder');toast('Module updated ✓');
 }
-function delMod(sid,mid){const s=S.sections.find(s=>s.id===sid);if(s){s.modules=s.modules.filter(m=>m.id!==mid);save();navTo('module-builder');}toast('Module removed');}
+function delMod(sid,mid){
+  var s=S.sections.find(function(x){ return x.id===sid; });
+  var m=s&&s.modules.find(function(x){ return x.id===mid; });
+  var label = m && m.title ? '"'+m.title+'"' : 'this module';
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    if(s){ s.modules=s.modules.filter(function(x){ return x.id!==mid; }); save(); navTo('module-builder'); }
+    toast('Module removed');
+  });
+}
 function changeModSt(sid,mid,st){
   const s=S.sections.find(s=>s.id===sid);const m=s?.modules.find(m=>m.id===mid);
   if(m){m.status=st;save();autoUnlock();toast('Status updated');}
@@ -4110,7 +4168,13 @@ function addQuizQ(){
   save();['aq-q','aq-a','aq-b','aq-c','aq-d'].forEach(id=>document.getElementById(id).value='');
   renderEditQuiz(m);closeModal('modal-add-quiz');toast('Question added ✓');
 }
-function delQuizQ(mid,idx){const m=findMod(mid);if(m){m.quiz.splice(idx,1);save();renderEditQuiz(m);}toast('Question removed');}
+function delQuizQ(mid,idx){
+  confirmDelete('Are you sure you want to delete this quiz question?', function(){
+    var m=findMod(mid);
+    if(m){ m.quiz.splice(idx,1); save(); renderEditQuiz(m); }
+    toast('Question removed');
+  });
+}
 
 function addDocToModule(){
   const fi=document.getElementById('em-doc-file');
@@ -4200,6 +4264,16 @@ function addLinkToModule(){
   }
 }
 function removeDocFromModal(idx){
+  const mid=document.getElementById('em-mid').value;
+  const m=findMod(mid); if(!m||!m.docs) return;
+  var doc=m.docs[idx];
+  var noun = doc && doc.ext==='link' ? 'link' : 'document';
+  var label = doc && doc.title ? '"'+doc.title+'"' : 'this '+noun;
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    _doRemoveDocFromModal(idx);
+  });
+}
+function _doRemoveDocFromModal(idx){
   const mid=document.getElementById('em-mid').value;
   const m=findMod(mid); if(!m||!m.docs) return;
   const removed=m.docs[idx];
@@ -4315,14 +4389,28 @@ function addDeptModule(){
   S.deptModules.push({id:'dm'+Date.now(),title:t,desc:document.getElementById('dm-desc').value,type:document.getElementById('dm-type').value,time:parseInt(document.getElementById('dm-time').value)||30});
   save();closeModal('modal-add-dmod');navTo('lead-modules');toast('Module added ✓');
 }
-function delDM(id){S.deptModules=S.deptModules.filter(m=>m.id!==id);save();navTo('lead-modules');toast('Removed');}
+function delDM(id){
+  var m=(S.deptModules||[]).find(function(x){ return x.id===id; });
+  var label = m && m.title ? '"'+m.title+'"' : 'this module';
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    S.deptModules=S.deptModules.filter(function(x){ return x.id!==id; });
+    save(); navTo('lead-modules'); toast('Removed');
+  });
+}
 
 function addWorkflow(){
   const n=document.getElementById('wf-name').value.trim();if(!n){toast('Name required');return;}
   S.workflows.push({id:'w'+Date.now(),name:n,trigger:document.getElementById('wf-trigger').value,action:document.getElementById('wf-action').value,dept:document.getElementById('wf-dept').value,active:true});
   save();closeModal('modal-add-workflow');navTo('workflows');toast('Workflow created ✓');
 }
-function delWF(id){S.workflows=S.workflows.filter(w=>w.id!==id);save();navTo('workflows');}
+function delWF(id){
+  var w=(S.workflows||[]).find(function(x){ return x.id===id; });
+  var label = w && w.name ? '"'+w.name+'"' : 'this workflow';
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    S.workflows=S.workflows.filter(function(x){ return x.id!==id; });
+    save(); navTo('workflows'); toast('Workflow deleted');
+  });
+}
 function toggleWF(id,v){const w=S.workflows.find(w=>w.id===id);if(w){w.active=v;save();}}
 
 function addNotifRule(){
@@ -4330,7 +4418,14 @@ function addNotifRule(){
   S.notifRules.push({id:'n'+Date.now(),name:n,condition:document.getElementById('nr-cond').value,days:parseInt(document.getElementById('nr-days').value)||3,target:document.getElementById('nr-target').value,active:true});
   save();closeModal('modal-add-notif');navTo('notifications');toast('Rule added ✓');
 }
-function delNR(id){S.notifRules=S.notifRules.filter(n=>n.id!==id);save();navTo('notifications');}
+function delNR(id){
+  var n=(S.notifRules||[]).find(function(x){ return x.id===id; });
+  var label = n && n.name ? '"'+n.name+'"' : 'this rule';
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    S.notifRules=S.notifRules.filter(function(x){ return x.id!==id; });
+    save(); navTo('notifications'); toast('Rule deleted');
+  });
+}
 function toggleNR(id,v){const n=S.notifRules.find(n=>n.id===id);if(n){n.active=v;save();}}
 
 function resolveNudge(id){S.nudges=S.nudges.filter(n=>n.id!==id);save();updateBadges();navTo('admin-overview');toast('Resolved ✓');}
@@ -4774,18 +4869,23 @@ function addModuleLink(mid){
 }
 function removeModuleDoc(mid,idx){
   const mod=findMod(mid); if(!mod||!mod.docs) return;
-  mod.docs.splice(idx,1);
-  try{
-    var rmSec=null;
-    S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) rmSec=s; }); });
-    var isCommonRm = rmSec && (rmSec.dept==='all'||rmSec.dept==='All');
-    var rmDept = isCommonRm ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
-    var rmKey='ebDOCS_'+rmDept+'_'+mid;
-    var rmDocs;
-    try{ rmDocs=JSON.parse(localStorage.getItem(rmKey))||[]; }catch(e2){ rmDocs=[]; }
-    if(rmDocs.length>idx){ rmDocs.splice(idx,1); localStorage.setItem(rmKey, JSON.stringify(rmDocs)); }
-  }catch(e){}
-  save(); renderModuleDocs(mod); toast('Removed');
+  var doc=mod.docs[idx];
+  var noun = doc && doc.ext==='link' ? 'link' : 'document';
+  var label = doc && doc.title ? '"'+doc.title+'"' : 'this '+noun;
+  confirmDelete('Are you sure you want to delete '+label+'?', function(){
+    mod.docs.splice(idx,1);
+    try{
+      var rmSec=null;
+      S.sections.forEach(function(s){ s.modules.forEach(function(m){ if(m.id===mid) rmSec=s; }); });
+      var isCommonRm = rmSec && (rmSec.dept==='all'||rmSec.dept==='All');
+      var rmDept = isCommonRm ? 'All' : ((window.S&&S.user&&S.user.dept)?S.user.dept.replace(/\s+/g,''):'All');
+      var rmKey='ebDOCS_'+rmDept+'_'+mid;
+      var rmDocs;
+      try{ rmDocs=JSON.parse(localStorage.getItem(rmKey))||[]; }catch(e2){ rmDocs=[]; }
+      if(rmDocs.length>idx){ rmDocs.splice(idx,1); localStorage.setItem(rmKey, JSON.stringify(rmDocs)); }
+    }catch(e){}
+    save(); renderModuleDocs(mod); toast('Removed');
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -5364,18 +5464,20 @@ function saveUser(){
 
 function deleteUser(id){
   var u = (S.users||[]).find(function(x){ return String(x.id)===String(id); });
-  if(!u || !confirm('Delete user '+u.name+'? They will no longer be able to log in.')) return;
-  var emailLower = (u.email||'').toLowerCase();
-  // Filter by id AND by email so a stale duplicate row with the same email also gets removed
-  S.users = S.users.filter(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()!==emailLower; });
-  if(S.people && emailLower){
-    S.people = S.people.filter(function(p){ return (p.email||'').toLowerCase()!==emailLower; });
-  }
-  if(window._supaReady && emailLower){
-    sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
-    sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
-  }
-  save(); navTo('admin-users'); toast('User deleted');
+  if(!u) return;
+  confirmDelete('Are you sure you want to delete '+u.name+'? They will no longer be able to log in.', function(){
+    var emailLower = (u.email||'').toLowerCase();
+    // Filter by id AND by email so a stale duplicate row with the same email also gets removed
+    S.users = S.users.filter(function(x){ return String(x.id)!==String(id) && (x.email||'').toLowerCase()!==emailLower; });
+    if(S.people && emailLower){
+      S.people = S.people.filter(function(p){ return (p.email||'').toLowerCase()!==emailLower; });
+    }
+    if(window._supaReady && emailLower){
+      sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
+      sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
+    }
+    save(); navTo('admin-users'); toast('User deleted');
+  });
 }
 
 function toggleUserActive(id, active){
@@ -5407,11 +5509,12 @@ function activateSSOFromLogin(){
   alert('\u2705 Google SSO Activated!');
 }
 function deactivateSSO(){
-  if(!confirm('Remove Google SSO?')) return;
-  S.googleClientId=''; save(); updateSSOStatusBadge();
-  var w=document.getElementById('google-btn-wrap'); if(w) w.innerHTML='';
-  var b=document.getElementById('email-login-btn'); if(b) b.style.display='flex';
-  if(typeof toast==='function') toast('SSO removed');
+  confirmDelete('Are you sure you want to remove Google SSO? Users will need to sign in with email and password.', function(){
+    S.googleClientId=''; save(); updateSSOStatusBadge();
+    var w=document.getElementById('google-btn-wrap'); if(w) w.innerHTML='';
+    var b=document.getElementById('email-login-btn'); if(b) b.style.display='flex';
+    if(typeof toast==='function') toast('SSO removed');
+  }, {confirmLabel:'Remove'});
 }
 function injectGoogleSSO(clientId){
   if(!clientId) return;
