@@ -915,6 +915,11 @@ to{opacity:1;transform:translateY(0)}}
         <button class="btn primary xs" onclick="document.getElementById('em-doc-file').click()">📎 Upload</button>
       </div>
       <div class="muted" style="margin-top:4px">PDF, PowerPoint, Word, Excel, images</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <input class="finput" id="em-link-name" placeholder="Link name (e.g. Onboarding deck)" style="flex:1"/>
+        <input class="finput" id="em-link-url" placeholder="Paste Drive / web URL" style="flex:1.5"/>
+        <button class="btn outline xs" onclick="addLinkToModule()">🔗 Add link</button>
+      </div>
     </div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-edit-module')">Cancel</button><button class="btn primary" onclick="saveEditModule()">Save Changes</button></div>
   </div>
@@ -4062,6 +4067,43 @@ function addDocToModule(){
     }
   };
   reader.readAsDataURL(f);
+}
+function addLinkToModule(){
+  var mid = document.getElementById('em-mid').value;
+  var name = (document.getElementById('em-link-name')||{}).value || '';
+  var url  = (document.getElementById('em-link-url') ||{}).value || '';
+  name = name.trim(); url = url.trim();
+  if(!name){ toast('Please enter a link name'); return; }
+  if(!url){  toast('Please paste the link URL');  return; }
+  if(!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var m = findMod(mid); if(!m) return;
+  if(!m.docs) m.docs=[];
+  // Tag by the module's section dept so joiners in that dept see it.
+  var modSec=null;
+  S.sections.forEach(function(s){ s.modules.forEach(function(mm){ if(mm.id===mid) modSec=s; }); });
+  var dept = modSec
+    ? ((modSec.dept==='all'||modSec.dept==='All') ? 'All' : String(modSec.dept).replace(/\s+/g,''))
+    : ((window.S&&S.user&&S.user.dept) ? S.user.dept.replace(/\s+/g,'') : 'All');
+  var linkObj = { title:name, filename:name, ext:'link', isUrl:true, data:url, mime:'link', size:'', date:new Date().toLocaleDateString('en-IN') };
+  function _commit(){
+    m.docs.push(linkObj);
+    save();
+    document.getElementById('em-doccount').textContent = m.docs.length;
+    document.getElementById('em-docs-list').innerHTML = m.docs.map(function(d,i){
+      return '<div class="file-item"><span class="file-icon">'+fIcon(d.ext||'pdf')+'</span><span class="file-name">'+d.title+'</span><span class="file-size">'+(d.size||'')+'</span><button class="btn ghost xs" onclick="removeDocFromModal('+i+')">✕</button></div>';
+    }).join('');
+    document.getElementById('em-link-name').value = '';
+    document.getElementById('em-link-url').value  = '';
+    toast('Link added ✓');
+  }
+  if(window._supaReady){
+    sbSaveDocLink(mid, dept, {title:name, url:url}).then(function(row){
+      if(row && row.id) linkObj.id = row.id;
+      _commit();
+    }).catch(function(e){ console.error('addLinkToModule:',e); toast('Could not save link'); });
+  } else {
+    _commit();
+  }
 }
 function removeDocFromModal(idx){
   const mid=document.getElementById('em-mid').value;
