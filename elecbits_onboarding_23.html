@@ -140,8 +140,8 @@ to{opacity:1;transform:translateY(0)}}
 .sidebar:hover,.sidebar.expanded{width:224px}
 .sb-logo{width:100%;padding:14px 0;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--navy-b);flex-shrink:0;overflow:hidden;height:58px;gap:0}
 .sb-logo-mark{width:32px;height:32px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0}
-.sb-logo-text{font-size:14px;font-weight:800;color:#fff;white-space:nowrap;margin-left:10px;opacity:0;transition:opacity .15s .05s;pointer-events:none}
-.sidebar:hover .sb-logo-text,.sidebar.expanded .sb-logo-text{opacity:1}
+.sb-logo-text{font-size:14px;font-weight:800;color:#fff;white-space:nowrap;margin-left:0;max-width:0;overflow:hidden;opacity:0;transition:opacity .15s .05s,max-width .2s ease,margin-left .2s ease;pointer-events:none}
+.sidebar:hover .sb-logo-text,.sidebar.expanded .sb-logo-text{opacity:1;max-width:200px;margin-left:10px}
 .sb-section{padding:4px 0 2px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.2);text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono);white-space:nowrap;overflow:hidden;width:224px;margin-top:12px;opacity:0;transition:opacity .1s;flex-shrink:0}
 .sidebar:hover .sb-section,.sidebar.expanded .sb-section{opacity:1}
 .sb-item{display:flex;align-items:center;width:calc(100% - 8px);margin:1px 4px;padding:9px 10px;border-radius:7px;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.45);transition:all .1s;font-family:var(--font);font-size:12.5px;font-weight:500;position:relative;white-space:nowrap;overflow:hidden;flex-shrink:0}
