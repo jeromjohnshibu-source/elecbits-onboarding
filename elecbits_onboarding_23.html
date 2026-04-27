@@ -936,6 +936,18 @@ to{opacity:1;transform:translateY(0)}}
   </div>
 </div>
 
+<!-- ══ ADD RESOURCE LINK (admin/lead) ══ -->
+<div class="modal-backdrop" id="modal-add-resource-link">
+  <div class="modal">
+    <div class="modal-hd"><h3>Add Resource Link</h3><button class="modal-close" onclick="closeModal('modal-add-resource-link')">✕</button></div>
+    <div class="fg"><label class="flabel">Link Name</label><input class="finput" id="rl-title" placeholder="e.g. Hardware design checklist"/></div>
+    <div class="fg"><label class="flabel">Drive / Web URL</label><input class="finput" id="rl-url" placeholder="https://drive.google.com/…"/></div>
+    <div class="fg"><label class="flabel">Department</label><select class="fselect" id="rl-dept"><option value="all">All</option><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
+    <div class="fg"><label class="flabel">Description (optional)</label><textarea class="ftextarea" id="rl-desc" placeholder="What is this for?"></textarea></div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-add-resource-link')">Cancel</button><button class="btn primary" onclick="saveResourceLink()">Save Link</button></div>
+  </div>
+</div>
+
 <!-- ══ UPLOAD RESOURCE (admin/lead) ══ -->
 <div class="modal-backdrop" id="modal-add-resource">
   <div class="modal">
@@ -3357,7 +3369,10 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
     <div class="slabel" style="margin-top:20px">Resources for joiners</div>
     <div class="flex-between" style="margin-bottom:8px">
       <div class="muted">Visible to all ${dept} joiners under Resources</div>
-      <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';(document.getElementById('res-link-url')||{}).value='';renderSelF();openModal('modal-add-resource')">+ Upload</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn outline sm" onclick="openAddResourceLink('${dept}')">🔗 Add Link</button>
+        <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';(document.getElementById('res-link-url')||{}).value='';renderSelF();openModal('modal-add-resource')">+ Upload</button>
+      </div>
     </div>
     ${S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All').map(r=>`<div class="doc-card">
       <div class="doc-thumb">${fIcon(r.ext)}</div>
@@ -3768,6 +3783,39 @@ function renderSelF(){
   </div>`).join('');
 }
 function rmFile(i){_selFiles.splice(i,1);renderSelF();}
+function openAddResourceLink(dept){
+  var t=document.getElementById('rl-title');   if(t) t.value='';
+  var u=document.getElementById('rl-url');     if(u) u.value='';
+  var d=document.getElementById('rl-desc');    if(d) d.value='';
+  var dp=document.getElementById('rl-dept');   if(dp) dp.value = dept || 'all';
+  openModal('modal-add-resource-link');
+}
+function saveResourceLink(){
+  var t=(document.getElementById('rl-title')||{}).value||''; t=t.trim();
+  var u=(document.getElementById('rl-url')  ||{}).value||''; u=u.trim();
+  var dept=(document.getElementById('rl-dept')||{}).value||'all';
+  var desc=(document.getElementById('rl-desc')||{}).value||'';
+  if(!t){ toast('Please enter a link name'); return; }
+  if(!u){ toast('Please paste the URL');      return; }
+  if(!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  var localId = 'res'+Date.now()+Math.random();
+  S.resources.push({id:localId, title:t, filename:t, ext:'link', size:'', dept:dept, desc:desc, date:new Date().toLocaleDateString('en-IN'), data:u, isUrl:true});
+  save();
+  closeModal('modal-add-resource-link');
+  toast('Link added ✓');
+  navTo('lead-onboarding');
+  if(window._supaReady){
+    sbSaveResourceLink({title:t, url:u, dept:dept, desc:desc}).then(function(row){
+      if(!row) return;
+      var idx=S.resources.findIndex(function(r){ return r.id===localId; });
+      if(idx>-1){
+        S.resources[idx].id = row.id;
+        save();
+        if(typeof renderView==='function') try{ renderView(); }catch(e){}
+      }
+    }).catch(function(e){ console.warn('sbSaveResourceLink error:',e); });
+  }
+}
 function uploadResources(){
   const t=document.getElementById('res-title')?.value.trim();
   if(!t){toast('Please enter a title');return;}
