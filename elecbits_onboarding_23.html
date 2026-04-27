@@ -2848,7 +2848,7 @@ function _joinerDay(p){
 viewRenderers['admin-people']=el=>{
   el.innerHTML=`<div class="flex-between" style="margin-bottom:14px">
     <div style="font-size:16px;font-weight:800;letter-spacing:-.4px">All Joiners</div>
-    <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person')">+ Add Joiner</button>
+    <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <table class="tbl">
@@ -3130,7 +3130,7 @@ viewRenderers['lead-members']=el=>{
     <div class="flex-between" style="margin-bottom:16px">
       <div><div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Team Members <span class="chip blue" style="vertical-align:middle;margin-left:6px">${dept}</span></div>
       <div class="muted" style="margin-top:2px">Manage all joiners in ${dept} — set statuses, view details, edit profiles</div></div>
-      <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person')">+ Add Joiner</button>
+      <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <table class="tbl">
@@ -4418,6 +4418,7 @@ function editPerson(id){
   // Store editing ID
   document.getElementById('np-name').dataset.editId=id;
   openModal('modal-add-person');
+  _refreshMgrOptionsFromSupabase('np-mgr', p.mgr||'');
 }
 
 // ══════════════════════════════════════════════
@@ -4942,6 +4943,43 @@ function _mgrOptions(selected){
     opts += '<option value="'+u.email+'"'+sel+'>'+u.name+' ('+u.designation+')</option>';
   });
   return opts;
+}
+
+// Pull the latest admin+lead list from Supabase, merge into S.users, and
+// repaint the given <select> with the full manager list. Used when a lead
+// (or admin) opens the Add/Edit Joiner modal — without this, their local
+// S.users only has the 5 hardcoded defaults + whatever they've added in
+// their own browser, so admins/leads created elsewhere won't appear.
+function _refreshMgrOptionsFromSupabase(selectId, selected){
+  if(!window._supaReady) return;
+  sbGet('users', 'role=in.(admin,lead)&active=eq.true').then(function(rows){
+    if(!rows || !rows.length) return;
+    if(!S.users) S.users=[];
+    rows.forEach(function(r){
+      if(!r || !r.email) return;
+      var em = String(r.email).toLowerCase();
+      var existing = S.users.find(function(u){ return (u.email||'').toLowerCase()===em; });
+      if(existing){
+        // Refresh display fields so the dropdown reflects the latest name/designation
+        existing.name = r.name || existing.name;
+        existing.role = r.role || existing.role;
+        existing.designation = r.designation || existing.designation || '';
+        existing.dept = r.dept || existing.dept || '';
+        existing.active = r.active!==false;
+      } else {
+        S.users.push({
+          id: r.id || Date.now()+Math.floor(Math.random()*1000),
+          name: r.name||'', email: em, password: r.password||'',
+          role: r.role||'lead', dept: r.dept||'',
+          designation: r.designation||'', mgr: r.mgr||'',
+          active: r.active!==false,
+          createdAt: (r.created_at||new Date().toISOString()).slice(0,10)
+        });
+      }
+    });
+    var sel = document.getElementById(selectId);
+    if(sel) sel.innerHTML = _mgrOptions(selected||'');
+  }).catch(function(e){ console.warn('refresh mgr options error:',e); });
 }
 viewRenderers['admin-users']=function(el){
   if(!S.users) S.users=[];
