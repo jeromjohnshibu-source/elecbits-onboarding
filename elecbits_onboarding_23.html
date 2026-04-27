@@ -2054,6 +2054,8 @@ function _loadJoinerState(email){
             if(meta.host)           m.host     = meta.host;
             if(meta.prereads && meta.prereads.length)   m.prereads  = meta.prereads;
             if(meta.postreads && meta.postreads.length) m.postreads = meta.postreads;
+            // Quiz is admin-authored and shared across all browsers — always overwrite local with the DB copy
+            if(Array.isArray(meta.quiz)) m.quiz = meta.quiz;
           });
         });
         save();
@@ -3514,19 +3516,26 @@ window.openModuleById = function openModuleById(id){
   // Docs tab
   renderModuleDocs(mod);
 
-  // Quiz
-  const sessionPast=!mod.date||new Date(mod.date)<new Date();
+  // Quiz — always unlocked. The tab simply mirrors whether questions exist yet.
   const qtab=document.getElementById('quiz-tab');
-  if(mod.quiz&&mod.quiz.length&&sessionPast){
-    qtab.textContent='Quiz ✓';qtab.style.pointerEvents='';qtab.style.opacity='1';
+  if(mod.quiz && mod.quiz.length){
+    qtab.textContent='Quiz ✓'; qtab.style.pointerEvents=''; qtab.style.opacity='1';
   } else {
-    qtab.textContent='Quiz 🔒';qtab.style.pointerEvents='none';qtab.style.opacity='.5';
+    qtab.textContent='Quiz'; qtab.style.pointerEvents=''; qtab.style.opacity='.7';
   }
-  renderQuiz(mod,sessionPast);
+  renderQuiz(mod, true);
 
-  // CTA
-  document.getElementById('mm-cta').textContent=mod.status==='done'?'Completed ✓':'Mark as complete ✓';
-  document.getElementById('mm-cta').disabled=mod.status==='done';
+  // CTA — let users (joiner, lead, admin) undo a completion if it was marked by mistake.
+  var ctaBtn = document.getElementById('mm-cta');
+  if(mod.status==='done'){
+    ctaBtn.textContent='↺ Undo completion';
+    ctaBtn.disabled=false;
+    ctaBtn.onclick=function(){ undoModuleProgress(); };
+  } else {
+    ctaBtn.textContent='Mark as complete ✓';
+    ctaBtn.disabled=false;
+    ctaBtn.onclick=function(){ markModuleProgress(); };
+  }
   // Show Start Session button if this module has a session
   var sessionBtn=document.getElementById('mm-session-btn');
   // Match by id first, then by title as fallback
@@ -3569,10 +3578,9 @@ window.openModuleById = function openModuleById(id){
   document.querySelectorAll('.mtab').forEach((t,i)=>{t.classList.toggle('active',i===0);document.getElementById('mtp-'+i).classList.toggle('active',i===0);});
   openModal('modal-module');
 }
-function renderQuiz(mod,sessionPast){
+function renderQuiz(mod){
   const el=document.getElementById('mm-quiz-content');
-  if(!mod.quiz||!mod.quiz.length){el.innerHTML='<div class="muted" style="padding:20px 0;text-align:center">No quiz for this module.</div>';return;}
-  if(!sessionPast){el.innerHTML='<div class="card-navy" style="text-align:center"><div style="font-size:24px;margin-bottom:8px">🔒</div><div style="font-size:13px;font-weight:600;color:#fff">Quiz opens after the session</div></div>';return;}
+  if(!mod.quiz||!mod.quiz.length){el.innerHTML='<div class="muted" style="padding:20px 0;text-align:center">No quiz for this module yet.</div>';return;}
   const ans=S.quizAnswers[mod.id]||{};
   const submitted=Object.keys(ans).length===mod.quiz.length;
   if(submitted){
@@ -3632,6 +3640,20 @@ function markModuleProgress(){
   save(); autoUnlock();
   _syncModuleToSupabase(_curMod);
   closeModal('modal-module'); toast('Module marked complete ✓');
+  const active=document.querySelector('.sb-item.active');
+  if(active) showContent(active.dataset.view||'modules');
+}
+// Joiner / lead / admin can roll a module back from done → not-started
+// (e.g. marked complete by mistake, or wants to redo it).
+function undoModuleProgress(){
+  if(!_curMod || _curMod.status!=='done') return;
+  _curMod.status='not-started';
+  // Drop any quiz answers tied to the module so the joiner can retake it.
+  if(S.quizAnswers && _curMod.id) delete S.quizAnswers[_curMod.id];
+  _syncJoinerProgress();
+  save();
+  _syncModuleToSupabase(_curMod);
+  closeModal('modal-module'); toast('Completion undone — module reset to Not Started');
   const active=document.querySelector('.sb-item.active');
   if(active) showContent(active.dataset.view||'modules');
 }
@@ -4164,14 +4186,26 @@ function openAddQuiz(mid){document.getElementById('aq-mid').value=mid;openModal(
 function addQuizQ(){
   const mid=document.getElementById('aq-mid').value;const m=findMod(mid);if(!m)return;
   const q=document.getElementById('aq-q').value.trim();if(!q){toast('Question required');return;}
+  if(!m.quiz) m.quiz=[];
   m.quiz.push({q,opts:[document.getElementById('aq-a').value,document.getElementById('aq-b').value,document.getElementById('aq-c').value,document.getElementById('aq-d').value],ans:parseInt(document.getElementById('aq-ans').value)});
   save();['aq-q','aq-a','aq-b','aq-c','aq-d'].forEach(id=>document.getElementById(id).value='');
   renderEditQuiz(m);closeModal('modal-add-quiz');toast('Question added ✓');
+  // Push to Supabase so joiners on other browsers see the new quiz.
+  if(window._supaReady){
+    sbSaveModuleMeta(mid, { quiz:m.quiz, updated_by:(S.user&&S.user.email)||'' })
+      .catch(function(e){ console.warn('quiz sync error:',e); });
+  }
 }
 function delQuizQ(mid,idx){
   confirmDelete('Are you sure you want to delete this quiz question?', function(){
     var m=findMod(mid);
-    if(m){ m.quiz.splice(idx,1); save(); renderEditQuiz(m); }
+    if(m){
+      m.quiz.splice(idx,1); save(); renderEditQuiz(m);
+      if(window._supaReady){
+        sbSaveModuleMeta(mid, { quiz:m.quiz, updated_by:(S.user&&S.user.email)||'' })
+          .catch(function(e){ console.warn('quiz sync error:',e); });
+      }
+    }
     toast('Question removed');
   });
 }
