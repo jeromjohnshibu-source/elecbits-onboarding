@@ -5580,10 +5580,48 @@ function removeModuleDoc(mid,idx){
 function runSplash(cb){ cb(); }
 
 // ══════════════════════════════════════════════
+// ONE-TIME BACKFILL — Shreya, Raja, Amitabh
+// ──────────────────────────────────────────────
+// Re-adds these users once per browser. Gated by a localStorage flag so
+// a deletion sticks afterwards (no auto-reinject like the old seed loop).
+// Roles/depts are best-guess defaults — admin can edit in User Management.
+function _backfillRequestedUsers(){
+  if(localStorage.getItem(_SV+'backfill_users_v1')) return;
+  var requested = [
+    {name:'Raja',    email:'raja@elecbits.in',    password:'raja-temp-001',    role:'admin', dept:'Admin',    designation:'Admin',     mgr:''},
+    {name:'Shreya',  email:'shreya@elecbits.in',  password:'shreya-temp-001',  role:'lead',  dept:'Hardware', designation:'Team Lead', mgr:'Raja'},
+    {name:'Amitabh', email:'amitabh@elecbits.in', password:'amitabh-temp-001', role:'lead',  dept:'Firmware', designation:'Team Lead', mgr:'Raja'},
+  ];
+  if(!S.users) S.users=[];
+  requested.forEach(function(r){
+    var em=r.email.toLowerCase();
+    var existing=S.users.find(function(u){ return (u.email||'').toLowerCase()===em; });
+    if(!existing){
+      S.users.push({
+        id:Date.now()+Math.floor(Math.random()*1000),
+        name:r.name, email:em, password:r.password,
+        role:r.role, dept:r.dept, designation:r.designation, mgr:r.mgr,
+        active:true, mustChangePassword:true,
+        createdAt:new Date().toISOString().slice(0,10)
+      });
+    }
+    if(window._supaReady){
+      sbUpsert('users', {
+        name:r.name, email:em, password:r.password,
+        role:r.role, dept:r.dept, designation:r.designation, mgr:r.mgr, active:true
+      }).catch(function(e){ console.warn('backfill upsert error for',em,e); });
+    }
+  });
+  try{ save(); }catch(e){}
+  localStorage.setItem(_SV+'backfill_users_v1','1');
+}
+
+// ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
 (function(){
   try {
+    _backfillRequestedUsers();
     if(typeof injectGoogleSSO==='function' && S.googleClientId) injectGoogleSSO(S.googleClientId);
     setTimeout(function(){ try{ updateSSOStatusBadge(); }catch(e){} }, 200);
     // Department dropdowns are static markup until we hydrate them from the catalog
