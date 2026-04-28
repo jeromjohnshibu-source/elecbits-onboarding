@@ -886,7 +886,7 @@ to{opacity:1;transform:translateY(0)}}
     <div class="modal-hd"><h3>Add New Joiner</h3><button class="modal-close" onclick="closeModal('modal-add-person')">✕</button></div>
     <div class="fg"><label class="flabel">Full Name</label><input class="finput" id="np-name" placeholder="e.g. Rahul Sharma"/></div>
     <div class="fg"><label class="flabel">Email</label><input class="finput" id="np-email" placeholder="rahul@elecbits.in"/></div>
-    <div class="fg"><label class="flabel">Password</label><input class="finput" id="np-pass" type="password" placeholder="Set a login password" value="pass123"/></div>
+    <div class="fg"><label class="flabel">Password</label><input class="finput" id="np-pass" type="text" placeholder="Set a login password" autocomplete="off"/></div>
     <div class="fg"><label class="flabel">Role / Designation</label><input class="finput" id="np-role" placeholder="e.g. Associate Hardware Engineer"/></div>
     <div class="fg"><label class="flabel">Department</label><select class="fselect" id="np-dept"><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
     <div class="fg"><label class="flabel">Track</label><select class="fselect" id="np-track"><option>Fresher</option><option>Experienced</option></select></div>
@@ -3234,7 +3234,7 @@ function _joinerDay(p){
 viewRenderers['admin-people']=el=>{
   el.innerHTML=`<div class="flex-between" style="margin-bottom:14px">
     <div style="font-size:16px;font-weight:800;letter-spacing:-.4px">All Joiners</div>
-    <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
+    <button class="btn primary sm" onclick="resetAddPersonModal();document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <table class="tbl">
@@ -3518,7 +3518,7 @@ viewRenderers['lead-members']=el=>{
     <div class="flex-between" style="margin-bottom:16px">
       <div><div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Team Members <span class="chip blue" style="vertical-align:middle;margin-left:6px">${dept}</span></div>
       <div class="muted" style="margin-top:2px">Manage all joiners in ${dept} — set statuses, view details, edit profiles</div></div>
-      <button class="btn primary sm" onclick="document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
+      <button class="btn primary sm" onclick="resetAddPersonModal();document.getElementById('np-mgr').innerHTML=_mgrOptions('');openModal('modal-add-person');_refreshMgrOptionsFromSupabase('np-mgr','')">+ Add Joiner</button>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <table class="tbl">
@@ -4517,6 +4517,17 @@ function delRes(id){
     if(typeof renderView==='function') try{ renderView(); }catch(e){}
     toast('Removed');
   });
+}
+
+// Clear every field in the Add Joiner modal so a fresh open never shows the
+// previously-added joiner's details.
+function resetAddPersonModal(){
+  ['np-name','np-email','np-pass','np-role','np-date'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  var dept=document.getElementById('np-dept'); if(dept) dept.selectedIndex=0;
+  var track=document.getElementById('np-track'); if(track) track.selectedIndex=0;
+  var nameEl=document.getElementById('np-name'); if(nameEl) nameEl.dataset.editId='';
 }
 
 function addPerson(){
