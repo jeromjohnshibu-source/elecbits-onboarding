@@ -4232,7 +4232,7 @@ function renderSelF(){
   </div>`).join('');
 }
 function rmFile(i){_selFiles.splice(i,1);renderSelF();}
-function isLinkResource(r){ return !!(r && (r.isUrl || r.ext==='link')); }
+function isLinkResource(r){ return !!(r && r.ext==='link'); }
 function openAddResourceLink(dept, id){
   var idEl=document.getElementById('rl-id');   if(idEl) idEl.value = id||'';
   var titleEl=document.getElementById('rl-modal-title'); if(titleEl) titleEl.textContent = id?'Edit Resource Link':'Add Resource Link';
