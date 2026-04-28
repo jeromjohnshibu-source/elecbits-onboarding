@@ -795,6 +795,10 @@ to{opacity:1;transform:translateY(0)}}
     <input type="hidden" id="wu-person-id"/>
     <div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Paste the link to <span id="wu-person-name" style="font-weight:700;color:var(--text)">this joiner</span>'s work-update sheet. They'll see a "Update work update sheet" button on their Home and under Work Update.</div>
     <div class="fg"><label class="flabel">Sheet URL (Google Doc / Sheet / any link)</label><input class="finput" id="wu-url" placeholder="https://docs.google.com/…"/></div>
+    <div style="background:var(--blue-light);border:1px solid rgba(61,111,232,.15);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px">
+      💡 If the joiner can't see the link after you save, run this once in the Supabase SQL editor:
+      <code style="display:block;margin-top:6px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text)">alter table people add column if not exists work_update_url text;</code>
+    </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal('modal-work-update')">Cancel</button>
       <button class="btn primary" onclick="saveWorkUpdateLink()">Save</button>
@@ -4317,7 +4321,7 @@ function openWorkUpdateModal(personId){
   document.getElementById('wu-url').value = p.workUpdateUrl || '';
   openModal('modal-work-update');
 }
-function saveWorkUpdateLink(){
+async function saveWorkUpdateLink(){
   var pid = (document.getElementById('wu-person-id')||{}).value || '';
   var raw = ((document.getElementById('wu-url')||{}).value || '').trim();
   var p   = (S.people||[]).find(function(x){ return String(x.id)===String(pid); });
@@ -4331,10 +4335,28 @@ function saveWorkUpdateLink(){
   save();
   closeModal('modal-work-update');
   _refreshActiveView();
-  toast(raw?'Work-update link saved ✓':'Work-update link cleared');
+
+  // Persist to Supabase so the joiner can read it on their own login.
+  // Without this, the link only lives in the lead's localStorage.
   if(window._supaReady && p.email){
-    sbPatch('people','email=eq.'+encodeURIComponent(p.email), { work_update_url: raw })
-      .catch(function(e){ console.warn('sbPatch work_update_url:', e); });
+    try{
+      var res = await sbPatch('people','email=eq.'+encodeURIComponent(p.email), { work_update_url: raw });
+      if(res === null){
+        // sbFetch returns null on HTTP error — most likely cause is the column not existing yet.
+        toast('Saved locally, but the joiner can\'t see it yet. Run: alter table people add column work_update_url text;', 6500);
+        return;
+      }
+      if(Array.isArray(res) && !res.length){
+        toast('No people row found for '+p.email+' — joiner won\'t see it until that row exists.', 6000);
+        return;
+      }
+      toast(raw?'Work-update link saved ✓':'Work-update link cleared');
+    }catch(e){
+      console.warn('sbPatch work_update_url:', e);
+      toast('Saved locally — Supabase sync failed. Check console for details.', 5500);
+    }
+  } else {
+    toast(raw?'Saved locally (offline) ✓':'Cleared locally');
   }
 }
 function openAddResourceLink(dept, id){
