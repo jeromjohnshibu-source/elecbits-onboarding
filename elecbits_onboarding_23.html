@@ -856,12 +856,12 @@ to{opacity:1;transform:translateY(0)}}
         </div>
       </div>
       <div class="fg"><label class="flabel">Role</label>
-        <select class="fselect" id="um-role" onchange="document.getElementById('um-role-hint').textContent=({joiner:'Sees personal onboarding dashboard',lead:'Sees team management + dept onboarding',admin:'Full access — overview, builder, analytics'})[this.value]">
-          <option value="joiner">Joiner</option>
+        <select class="fselect" id="um-role" onchange="document.getElementById('um-role-hint').textContent=({lead:'Sees team management + dept onboarding',admin:'Full access — overview, builder, analytics'})[this.value]">
           <option value="lead">Lead</option>
           <option value="admin">Admin</option>
         </select>
-        <div id="um-role-hint" style="font-size:11px;color:var(--text3);margin-top:4px;">Sees personal onboarding dashboard</div>
+        <div id="um-role-hint" style="font-size:11px;color:var(--text3);margin-top:4px;">Sees team management + dept onboarding</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;">Adding a joiner? Use <b style="color:var(--text2)">All Joiners → + Add Joiner</b> instead.</div>
       </div>
       <div class="fg"><label class="flabel">Department</label>
         <select class="fselect" id="um-dept">
@@ -1194,13 +1194,26 @@ const sbPatch  = (table, filter, body)    => sbFetch(table, {method:'PATCH', fil
 const sbDelete = (table, filter)          => sbFetch(table, {method:'DELETE', filter});
 const sbUpsert = (table, body)            => sbFetch(table, {method:'POST', body, upsert:true});
 
-// ── LOGIN: check against Supabase users table ──
+// ── LOGIN: check against Supabase users (admin/lead) and people (joiner) ──
 async function sbLogin(email, password) {
   // Note: do NOT encode email/password — Supabase handles special chars natively
   const filter = 'email=eq.' + email + '&password=eq.' + password + '&active=eq.true';
-  const rows = await sbGet('users', filter);
-  if (!rows || !rows.length) return null;
-  return rows[0];
+  // Admin / lead live in users
+  const userRows = await sbGet('users', filter);
+  if (userRows && userRows.length) return userRows[0];
+  // Joiners live in people (with password + must_change_password columns)
+  const peopleRows = await sbGet('people', filter);
+  if (peopleRows && peopleRows.length) {
+    const p = peopleRows[0];
+    return {
+      id: p.id, name: p.name, email: p.email,
+      role: 'joiner',
+      dept: p.dept || '', designation: p.designation || '', mgr: p.mgr || '',
+      password: p.password, active: p.active !== false,
+      must_change_password: p.must_change_password === true
+    };
+  }
+  return null;
 }
 
 // ── PROGRESS: save a single module status for a joiner ──
@@ -1524,23 +1537,16 @@ async function sbLoadPeople() {
   return await sbGet('people') || [];
 }
 
-// ── PEOPLE: save/update a person ──
+// ── PEOPLE: save/update a joiner (people table is the source of truth) ──
 async function sbSavePerson(person) {
   if (person.email) {
-    // Save to people table
     await sbUpsert('people', {
       name: person.name, email: person.email, role: person.role||'joiner',
       dept: person.dept, designation: person.designation||'',
       mgr: person.mgr||'', track: person.track||'Full Onboarding',
-      day: person.day||1, active: true
-    });
-    // Save to users table so they can log in
-    await sbUpsert('users', {
-      name: person.name, email: person.email,
-      password: person.password||'pass123',
-      role: person.role||'joiner', dept: person.dept||'',
-      designation: person.designation||'', mgr: person.mgr||'',
-      active: true
+      day: person.day||1, active: true,
+      password: person.password||undefined,
+      must_change_password: person.password ? true : undefined
     });
   }
 }
@@ -4632,23 +4638,19 @@ function addPerson(){
     joinerPw = _words[Math.floor(Math.random()*_words.length)] + Math.floor(Math.random()*900+100);
   }
   S.people.push({id:newPersonId,name:n,email:e,role:document.getElementById('np-role').value,dept:newDept,track:document.getElementById('np-track').value,mgr:document.getElementById('np-mgr').value,day:1,progress:0,status:'New joiner',joinDate:newJoinDate});
-  // SUPABASE: save new joiner to both people AND users tables
+  // SUPABASE: joiners live ONLY in the people table (users = admin/lead).
+  // The people row carries the password + must_change_password flag.
   if(window._supaReady){
     var newDesig = document.getElementById('np-role').value || 'Team Member';
     var newMgr  = document.getElementById('np-mgr').value || '';
     var newTrack= document.getElementById('np-track').value || 'Full Onboarding';
-    // Save to people table
     sbUpsert('people', {
       name:n, email:e, role:newDesig, dept:newDept,
       designation:newDesig,
       mgr:newMgr, track:newTrack, day:1, progress:0,
-      onboard_status:'New joiner', active:true
+      onboard_status:'New joiner', active:true,
+      password:joinerPw, must_change_password:true
     }).catch(function(err){ console.warn('people save error:', err); });
-    // Save to users table so they can log in — same password we'll show the admin.
-    sbUpsert('users', {
-      name:n, email:e, password:joinerPw, role:'joiner',
-      dept:newDept, designation:newDesig, mgr:newMgr, active:true
-    }).catch(function(err){ console.warn('users save error:', err); });
     // Clear any stale progress
     sbDelete('progress', 'joiner_email=eq.'+encodeURIComponent(e.toLowerCase()))
       .catch(function(err){ console.warn('Could not clear progress:', err); });
@@ -6175,20 +6177,25 @@ viewRenderers['admin-users']=function(el){
     return r==='admin'?'red':r==='lead'?'blue':'green';
   }
 
+  // User Management is for admin/lead login accounts only. Joiners are managed
+  // from the All Joiners page (they live in S.people / Supabase people table).
+  var staffUsers = S.users.filter(function(u){ return u.role==='admin' || u.role==='lead'; });
+  var joinerCount = (S.people||[]).length;
+
   el.innerHTML = '<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:4px;">User Management</div>'
-    + '<div class="muted" style="margin-bottom:16px;">Create and manage login accounts for all roles. Each user gets an email and password to sign in.</div>'
+    + '<div class="muted" style="margin-bottom:16px;">Login accounts for the admin team (admins and leads). Joiners are managed from <a href="#" onclick="navTo(\'admin-people\');return false" style="color:var(--blue);text-decoration:underline">All Joiners</a>.</div>'
 
     // Summary cards
     + '<div class="grid4" style="margin-bottom:20px;">'
-    + '<div class="stat-card"><div class="slbl">Total Users</div><div class="snum">'+(S.users.length)+'</div><div class="ssub">all roles</div></div>'
-    + '<div class="stat-card"><div class="slbl">Admins</div><div class="snum" style="color:var(--red)">'+(S.users.filter(function(u){return u.role==='admin';}).length)+'</div><div class="ssub">full access</div></div>'
-    + '<div class="stat-card"><div class="slbl">Leads</div><div class="snum" style="color:var(--blue)">'+(S.users.filter(function(u){return u.role==='lead';}).length)+'</div><div class="ssub">team managers</div></div>'
-    + '<div class="stat-card"><div class="slbl">Joiners</div><div class="snum" style="color:var(--green)">'+(S.users.filter(function(u){return u.role==='joiner';}).length)+'</div><div class="ssub">onboarding</div></div>'
+    + '<div class="stat-card"><div class="slbl">Staff Accounts</div><div class="snum">'+(staffUsers.length)+'</div><div class="ssub">admin + lead</div></div>'
+    + '<div class="stat-card"><div class="slbl">Admins</div><div class="snum" style="color:var(--red)">'+(staffUsers.filter(function(u){return u.role==='admin';}).length)+'</div><div class="ssub">full access</div></div>'
+    + '<div class="stat-card"><div class="slbl">Leads</div><div class="snum" style="color:var(--blue)">'+(staffUsers.filter(function(u){return u.role==='lead';}).length)+'</div><div class="ssub">team managers</div></div>'
+    + '<div class="stat-card"><div class="slbl">Joiners</div><div class="snum" style="color:var(--green)">'+joinerCount+'</div><div class="ssub">onboarding</div></div>'
     + '</div>'
 
     // Add user button
     + '<div class="flex-between" style="margin-bottom:12px;">'
-    + '<div style="font-size:14px;font-weight:700;">All Accounts</div>'
+    + '<div style="font-size:14px;font-weight:700;">Admin & Lead Accounts</div>'
     + '<button class="btn primary sm" onclick="openAddUser()">+ Add User</button>'
     + '</div>'
 
@@ -6196,7 +6203,7 @@ viewRenderers['admin-users']=function(el){
     + '<div class="card" style="padding:0;overflow:hidden;">'
     + '<table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Password</th><th>Role</th><th>Department</th><th>Designation</th><th>Status</th><th></th></tr></thead>'
     + '<tbody>'
-    + S.users.map(function(u){
+    + staffUsers.map(function(u){
         return '<tr>'
           + '<td><div style="font-weight:600;color:var(--text)">'+u.name+'</div></td>'
           + '<td style="font-family:var(--mono);font-size:11px;">'+u.email+'</td>'
@@ -6234,7 +6241,7 @@ function openAddUser(){
   document.getElementById('um-name').value = '';
   document.getElementById('um-email').value = '';
   document.getElementById('um-password').value = '';
-  document.getElementById('um-role').value = 'joiner';
+  document.getElementById('um-role').value = 'lead';
   document.getElementById('um-dept').value = 'Hardware';
   document.getElementById('um-designation').value = '';
   document.getElementById('um-mgr').innerHTML = _mgrOptions('');
@@ -6291,12 +6298,15 @@ function saveUser(){
       if(p){ p.name=name; p.email=newEmail; p.dept=dept; p.mgr=mgr; p.designation=desig; p.role=role; }
     }
     if(window._supaReady){
-      // Update by old email so we hit the existing Supabase row instead of inserting a new one
-      var patch = { name:name, email:newEmail, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active };
-      sbFetch('users', { method:'PATCH', body:patch, filter:'email=eq.'+encodeURIComponent(oldEmail) })
-        .catch(function(e){ console.warn('users PATCH error:',e); });
-      sbFetch('people', { method:'PATCH', body:{ name:name, email:newEmail, dept:dept, mgr:mgr, designation:desig, role:role }, filter:'email=eq.'+encodeURIComponent(oldEmail) })
-        .catch(function(e){ console.warn('people PATCH error:',e); });
+      // Joiners live in people; admin/lead live in users. Patch only the
+      // table that owns this record.
+      if(role==='joiner'){
+        sbFetch('people', { method:'PATCH', body:{ name:name, email:newEmail, dept:dept, mgr:mgr, designation:desig, role:role, password:pass, active:active }, filter:'email=eq.'+encodeURIComponent(oldEmail) })
+          .catch(function(e){ console.warn('people PATCH error:',e); });
+      } else {
+        sbFetch('users', { method:'PATCH', body:{ name:name, email:newEmail, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active }, filter:'email=eq.'+encodeURIComponent(oldEmail) })
+          .catch(function(e){ console.warn('users PATCH error:',e); });
+      }
     }
   } else {
     // Check duplicate email (case-insensitive) across users AND people
@@ -6307,11 +6317,14 @@ function saveUser(){
       S.people.push({ id:Date.now()+1, name:name, email:email, role:desig||'Team Member', dept:dept, track:'Fresher', mgr:mgr, day:1, progress:0, status:'New joiner', onboardStatus:'New joiner' });
     }
     if(window._supaReady){
-      sbUpsert('users',  { name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active })
-        .catch(function(e){ console.warn('users upsert error:',e); });
       if(role==='joiner'){
-        sbUpsert('people',{ name:name, email:email, role:role, dept:dept, designation:desig, mgr:mgr, track:'Full Onboarding', day:1, active:true })
+        // Joiner -> people only (with password).
+        sbUpsert('people', { name:name, email:email, role:role, dept:dept, designation:desig, mgr:mgr, track:'Full Onboarding', day:1, active:active!==false, password:pass, must_change_password:true })
           .catch(function(e){ console.warn('people upsert error:',e); });
+      } else {
+        // Admin / lead -> users only.
+        sbUpsert('users', { name:name, email:email, password:pass, role:role, dept:dept, designation:desig, mgr:mgr, active:active!==false })
+          .catch(function(e){ console.warn('users upsert error:',e); });
       }
     }
   }
@@ -6455,10 +6468,16 @@ function submitForceChangePw(){
   if(!found){err.textContent='Session error. Please log in again.';return;}
   var u=(S.users||[]).find(function(x){return x.id===found.id;});
   if(u){u.password=np;u.mustChangePassword=false;}
-  // Persist new password to Supabase so the next login (any device) sees it.
+  // Persist new password to Supabase. Joiner -> people, admin/lead -> users.
   if(window._supaReady && found.email){
-    sbPatch('users','email=eq.'+encodeURIComponent(String(found.email).toLowerCase()),
-      {password:np}).catch(function(e){ console.warn('users password patch error:',e); });
+    var enc=encodeURIComponent(String(found.email).toLowerCase());
+    if(found.role==='joiner'){
+      sbPatch('people','email=eq.'+enc,{password:np, must_change_password:false})
+        .catch(function(e){ console.warn('people password patch error:',e); });
+    } else {
+      sbPatch('users','email=eq.'+enc,{password:np})
+        .catch(function(e){ console.warn('users password patch error:',e); });
+    }
   }
   save();
   document.getElementById('modal-force-change-pw').style.display='none';
@@ -6488,11 +6507,20 @@ async function submitForgotPassword(){
   var tempPw=words[Math.floor(Math.random()*words.length)]+Math.floor(Math.random()*900+100);
   var foundInDb=false;
   if(window._supaReady){
+    var enc = encodeURIComponent(email);
     try{
-      var rows=await sbGet('users','email=eq.'+encodeURIComponent(email));
-      if(rows&&rows[0]){
-        await sbPatch('users','email=eq.'+encodeURIComponent(email),{password:tempPw});
+      // Try users first (admin/lead).
+      var userRows=await sbGet('users','email=eq.'+enc);
+      if(userRows&&userRows[0]){
+        await sbPatch('users','email=eq.'+enc,{password:tempPw});
         foundInDb=true;
+      } else {
+        // Try people (joiner).
+        var peopleRows=await sbGet('people','email=eq.'+enc);
+        if(peopleRows&&peopleRows[0]){
+          await sbPatch('people','email=eq.'+enc,{password:tempPw, must_change_password:true});
+          foundInDb=true;
+        }
       }
     }catch(e){ console.warn('forgot-password supabase error:',e); }
   }
