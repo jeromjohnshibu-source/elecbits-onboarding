@@ -986,12 +986,13 @@ to{opacity:1;transform:translateY(0)}}
 <!-- ══ ADD RESOURCE LINK (admin/lead) ══ -->
 <div class="modal-backdrop" id="modal-add-resource-link">
   <div class="modal">
-    <div class="modal-hd"><h3>Add Resource Link</h3><button class="modal-close" onclick="closeModal('modal-add-resource-link')">✕</button></div>
+    <div class="modal-hd"><h3 id="rl-modal-title">Add Resource Link</h3><button class="modal-close" onclick="closeModal('modal-add-resource-link')">✕</button></div>
+    <input type="hidden" id="rl-id"/>
     <div class="fg"><label class="flabel">Link Name</label><input class="finput" id="rl-title" placeholder="e.g. Hardware design checklist"/></div>
     <div class="fg"><label class="flabel">Drive / Web URL</label><input class="finput" id="rl-url" placeholder="https://drive.google.com/…"/></div>
     <div class="fg"><label class="flabel">Department</label><select class="fselect" id="rl-dept"><option value="all">All</option><option>Hardware</option><option>Firmware</option><option>ODM</option><option>Box Build</option><option>Project Management</option><option>Supply Chain</option></select></div>
     <div class="fg"><label class="flabel">Description (optional)</label><textarea class="ftextarea" id="rl-desc" placeholder="What is this for?"></textarea></div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-add-resource-link')">Cancel</button><button class="btn primary" onclick="saveResourceLink()">Save Link</button></div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal('modal-add-resource-link')">Cancel</button><button class="btn primary" id="rl-save-btn" onclick="saveResourceLink()">Save Link</button></div>
   </div>
 </div>
 
@@ -2983,11 +2984,9 @@ viewRenderers['admin-departments']=el=>{
 viewRenderers['joiner-resources']=el=>{
   const dept=S.user?.dept||'Hardware';
   const myRes=S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All');
-  el.innerHTML=`<div class="flex-between" style="margin-bottom:16px">
-    <div><div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Resources</div>
-    <div class="muted" style="margin-top:2px">Materials uploaded by your department lead for reference</div></div>
-  </div>
-  ${myRes.length?myRes.map(r=>`<div class="doc-card">
+  const links     = myRes.filter(isLinkResource);
+  const documents = myRes.filter(function(r){ return !isLinkResource(r); });
+  const docHtml = documents.map(r=>`<div class="doc-card">
     <div class="doc-thumb">${fIcon(r.ext)}</div>
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600;color:var(--text)">${r.title}</div>
@@ -2996,8 +2995,23 @@ viewRenderers['joiner-resources']=el=>{
     </div>
     ${r.data?`<button class="btn outline xs" onclick="window.open('${r.data}','_blank')">👁 View</button>
     <a href="${r.data}" download="${r.filename}" class="btn outline xs" style="text-decoration:none;display:inline-flex;align-items:center;padding:4px 8px;">⬇ Download</a>`:`<span class="muted" style="font-size:11px;">⏳ Processing…</span>`}
-  </div>`).join('')
-  :'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">📂</div><div style="font-size:14px;font-weight:600">No resources yet</div><div style="font-size:12px;margin-top:4px">Your department lead will upload materials here</div></div>'}`;
+  </div>`).join('');
+  const linkHtml = links.map(r=>`<div class="doc-card">
+    <div class="doc-thumb" style="background:rgba(61,111,232,.12);color:#3d6fe8;font-size:18px">🔗</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600;color:var(--text)">${r.title}</div>
+      ${r.desc?`<div class="muted" style="margin-top:2px">${r.desc}</div>`:''}
+      <div class="muted" style="margin-top:4px">Added ${r.date||'—'}</div>
+    </div>
+    ${r.data?`<button class="btn primary xs" onclick="window.open('${r.data}','_blank')">Click here to access →</button>`:`<span class="muted" style="font-size:11px;">⏳ Processing…</span>`}
+  </div>`).join('');
+  el.innerHTML=`<div class="flex-between" style="margin-bottom:16px">
+      <div><div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Resources</div>
+      <div class="muted" style="margin-top:2px">Materials uploaded by your department lead for reference</div></div>
+    </div>
+    ${myRes.length?'':'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">📂</div><div style="font-size:14px;font-weight:600">No resources yet</div><div style="font-size:12px;margin-top:4px">Your department lead will upload materials here</div></div>'}
+    ${documents.length?`<div class="slabel">Documents</div>${docHtml}`:''}
+    ${links.length?`<div class="slabel" style="margin-top:${documents.length?'24px':'0'}">Links</div>${linkHtml}`:''}`;
 };
 
 // ──────────────────────────────────────────────
@@ -3630,12 +3644,31 @@ viewRenderers['lead-modules']=viewRenderers['lead-onboarding']=el=>{
         <button class="btn primary sm" onclick="_selFiles=[];document.getElementById('res-title').value='';document.getElementById('res-desc').value='';document.getElementById('res-dept').value='${dept}';(document.getElementById('res-link-url')||{}).value='';renderSelF();openModal('modal-add-resource')">+ Upload</button>
       </div>
     </div>
-    ${S.resources.filter(r=>r.dept===dept||r.dept==='all'||r.dept==='All').map(r=>`<div class="doc-card">
-      <div class="doc-thumb">${fIcon(r.ext)}</div>
-      <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${r.title}</div><div class="muted">${r.filename} · ${r.date}</div></div>
-      ${r.data?`<button class="btn outline xs" onclick="window.open('${r.data}','_blank')">👁 View</button>`:''}
-      <button class="btn ghost xs" onclick="delRes('${r.id}')">✕</button>
-    </div>`).join('')||'<div class="muted" style="padding:8px 0">No resources. Click "+ Upload" to add one.</div>'}`;
+    ${(function(){
+      var myRes = S.resources.filter(function(r){ return r.dept===dept||r.dept==='all'||r.dept==='All'; });
+      if(!myRes.length) return '<div class="muted" style="padding:8px 0">No resources. Click "+ Upload" to add a document or "🔗 Add Link" to add a link.</div>';
+      var docs  = myRes.filter(function(r){ return !isLinkResource(r); });
+      var links = myRes.filter(isLinkResource);
+      var docHtml = docs.map(function(r){ return '<div class="doc-card">'
+        + '<div class="doc-thumb">'+fIcon(r.ext)+'</div>'
+        + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">'+r.title+'</div><div class="muted">'+r.filename+' · '+r.date+'</div></div>'
+        + (r.data?'<button class="btn outline xs" onclick="window.open(\''+r.data+'\',\'_blank\')">👁 View</button>':'')
+        + '<button class="btn ghost xs" onclick="delRes(\''+r.id+'\')">✕</button>'
+        + '</div>'; }).join('');
+      var linkHtml = links.map(function(r){
+        var safeId=String(r.id).replace(/'/g,"\\'");
+        return '<div class="doc-card">'
+        + '<div class="doc-thumb" style="background:rgba(61,111,232,.12);color:#3d6fe8;font-size:18px">🔗</div>'
+        + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">'+r.title+'</div>'
+        +   (r.desc?'<div class="muted">'+r.desc+'</div>':'')
+        +   '<div class="muted">Added '+(r.date||'—')+'</div></div>'
+        + (r.data?'<button class="btn primary xs" onclick="window.open(\''+r.data+'\',\'_blank\')">Click here to access →</button>':'')
+        + '<button class="btn outline xs" onclick="openAddResourceLink(\''+dept+'\',\''+safeId+'\')">Edit</button>'
+        + '<button class="btn ghost xs" onclick="delRes(\''+safeId+'\')">✕</button>'
+        + '</div>'; }).join('');
+      return (docs.length?'<div class="slabel" style="margin-top:14px">Documents</div>'+docHtml:'')
+        + (links.length?'<div class="slabel" style="margin-top:'+(docs.length?'18px':'14px')+'">Links</div>'+linkHtml:'');
+    })()}`;
 
   // Wire up drag-and-drop AFTER rendering
   setTimeout(()=>initDragDrop(),50);
@@ -4199,11 +4232,16 @@ function renderSelF(){
   </div>`).join('');
 }
 function rmFile(i){_selFiles.splice(i,1);renderSelF();}
-function openAddResourceLink(dept){
-  var t=document.getElementById('rl-title');   if(t) t.value='';
-  var u=document.getElementById('rl-url');     if(u) u.value='';
-  var d=document.getElementById('rl-desc');    if(d) d.value='';
-  var dp=document.getElementById('rl-dept');   if(dp) dp.value = dept || 'all';
+function isLinkResource(r){ return !!(r && (r.isUrl || r.ext==='link')); }
+function openAddResourceLink(dept, id){
+  var idEl=document.getElementById('rl-id');   if(idEl) idEl.value = id||'';
+  var titleEl=document.getElementById('rl-modal-title'); if(titleEl) titleEl.textContent = id?'Edit Resource Link':'Add Resource Link';
+  var saveBtn=document.getElementById('rl-save-btn');    if(saveBtn) saveBtn.textContent = id?'Save Changes':'Save Link';
+  var existing = id ? (S.resources||[]).find(function(r){ return String(r.id)===String(id); }) : null;
+  var t=document.getElementById('rl-title');   if(t) t.value=(existing&&existing.title)||'';
+  var u=document.getElementById('rl-url');     if(u) u.value=(existing&&existing.data)||'';
+  var d=document.getElementById('rl-desc');    if(d) d.value=(existing&&existing.desc)||'';
+  var dp=document.getElementById('rl-dept');   if(dp) dp.value=(existing&&existing.dept)||dept||'all';
   openModal('modal-add-resource-link');
 }
 function saveResourceLink(){
@@ -4211,15 +4249,40 @@ function saveResourceLink(){
   var u=(document.getElementById('rl-url')  ||{}).value||''; u=u.trim();
   var dept=(document.getElementById('rl-dept')||{}).value||'all';
   var desc=(document.getElementById('rl-desc')||{}).value||'';
+  var editingId=(document.getElementById('rl-id')||{}).value||'';
   if(!t){ toast('Please enter a link name'); return; }
   if(!u){ toast('Please paste the URL');      return; }
   if(!/^https?:\/\//i.test(u)) u = 'https://' + u;
+
+  if(editingId){
+    var idx=(S.resources||[]).findIndex(function(r){ return String(r.id)===String(editingId); });
+    if(idx<0){ toast('Could not find that link'); return; }
+    var existing = S.resources[idx];
+    S.resources[idx] = Object.assign({}, existing, { title:t, filename:t, dept:dept, desc:desc, data:u, isUrl:true, ext:'link', date:new Date().toLocaleDateString('en-IN') });
+    save();
+    closeModal('modal-add-resource-link');
+    toast('Link updated ✓');
+    _refreshActiveView();
+    if(window._supaReady && typeof sbPatch==='function' && !String(editingId).startsWith('res')){
+      sbPatch('resources','id=eq.'+encodeURIComponent(editingId), { title:t, file_url:u, dept:dept, description:desc })
+        .catch(function(e){ console.warn('sbPatch resource link:', e); });
+    } else if(window._supaReady){
+      // Local-only id — no DB row to patch yet, push as new
+      sbSaveResourceLink({title:t, url:u, dept:dept, desc:desc}).then(function(row){
+        if(!row) return;
+        var i2=S.resources.findIndex(function(r){ return String(r.id)===String(editingId); });
+        if(i2>-1){ S.resources[i2].id=row.id; save(); _refreshActiveView(); }
+      }).catch(function(e){ console.warn('sbSaveResourceLink error:',e); });
+    }
+    return;
+  }
+
   var localId = 'res'+Date.now()+Math.random();
   S.resources.push({id:localId, title:t, filename:t, ext:'link', size:'', dept:dept, desc:desc, date:new Date().toLocaleDateString('en-IN'), data:u, isUrl:true});
   save();
   closeModal('modal-add-resource-link');
   toast('Link added ✓');
-  navTo('lead-onboarding');
+  _refreshActiveView();
   if(window._supaReady){
     sbSaveResourceLink({title:t, url:u, dept:dept, desc:desc}).then(function(row){
       if(!row) return;
@@ -4227,7 +4290,7 @@ function saveResourceLink(){
       if(idx>-1){
         S.resources[idx].id = row.id;
         save();
-        if(typeof renderView==='function') try{ renderView(); }catch(e){}
+        _refreshActiveView();
       }
     }).catch(function(e){ console.warn('sbSaveResourceLink error:',e); });
   }
