@@ -605,7 +605,7 @@ to{opacity:1;transform:translateY(0)}}
         <input class="login-input" type="email" id="login-email" placeholder="Email address" autocomplete="email"/>
         <input class="login-input" type="password" id="login-password" placeholder="Password" autocomplete="current-password"/>
         <div style="text-align:right;margin-top:-2px;">
-          <button style="background:none;border:none;font-size:11px;color:rgba(255,255,255,.3);cursor:pointer;font-family:var(--font);padding:0;transition:color .15s;" onmouseover="this.style.color='rgba(255,255,255,.55)'" onmouseout="this.style.color='rgba(255,255,255,.3)'">Forgot password?</button>
+          <button type="button" onclick="openForgotPassword()" style="background:none;border:none;font-size:11px;color:rgba(255,255,255,.3);cursor:pointer;font-family:var(--font);padding:0;transition:color .15s;" onmouseover="this.style.color='rgba(255,255,255,.55)'" onmouseout="this.style.color='rgba(255,255,255,.3)'">Forgot password?</button>
         </div>
       </div>
 
@@ -2413,11 +2413,23 @@ function onDeptChange(person, oldDept){
 // ══════════════════════════════════════════════
 // AUTH
 // ══════════════════════════════════════════════
-function googleSSO(){
-  const email = prompt('Enter your Google email (production: real OAuth):','yourname@elecbits.in');
+async function googleSSO(){
+  // When SSO is configured, the real Google Identity Services button replaces
+  // this one (renderGoogleButton hides #email-login-btn). This fallback runs
+  // only if SSO has NOT been set up yet — accept an email but only if it
+  // matches a registered account.
+  if(S.googleClientId){
+    alert('Loading Google sign-in… please use the Google button above.');
+    return;
+  }
+  var email = prompt('Google sign-in is not yet configured.\nEnter your registered email to continue:');
   if(!email) return;
-  const name = email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-  doLogin({name,email,role:'joiner',dept:'Hardware',mgr:'Nikhil Rawat',designation:'Associate Engineer'});
+  var user = await resolveUserFromEmail(email);
+  if(!user){
+    alert('No account found for '+email+'.\nContact your admin to be added.');
+    return;
+  }
+  doLogin(user);
 }
 function demoLogin(role){
   const u={joiner:{name:'Aanya Kumar',email:'aanya@elecbits.in',role:'joiner',dept:'Hardware',mgr:'Nikhil Rawat',designation:'Associate Hardware Engineer'},admin:{name:'Saurav Singh',email:'saurav@elecbits.in',role:'admin',dept:'Admin',mgr:'',designation:'Co-Founder & CEO'},lead:{name:'Arjun Sharma',email:'arjun@elecbits.in',role:'lead',dept:'Project Management',mgr:'Saurav Singh',designation:'Project Management Lead'}};
@@ -5964,7 +5976,24 @@ function loginWithCredentials(){
       clearTimeout(loginTimeout);
       if(loginBtn){ loginBtn.textContent='Sign In →'; loginBtn.disabled=false; }
       if(dbUser){
-        // Supabase user found — log in
+        // Honor mustChangePassword set by Add Joiner / Forgot Password flows.
+        // The flag is mirrored on the local S.users row even when Supabase
+        // doesn't carry the column; check both.
+        var localMirror=(S.users||[]).find(function(u){ return (u.email||'').toLowerCase()===email; });
+        var mustChange = (dbUser.must_change_password===true) || (localMirror && localMirror.mustChangePassword===true);
+        if(mustChange){
+          window._pendingLogin = {
+            id: localMirror?localMirror.id:Date.now(),
+            name:dbUser.name, email:dbUser.email, role:dbUser.role,
+            dept:dbUser.dept, designation:dbUser.designation||'', mgr:dbUser.mgr||''
+          };
+          document.getElementById('fcp-email').textContent = dbUser.email;
+          document.getElementById('fcp-new').value = '';
+          document.getElementById('fcp-confirm').value = '';
+          document.getElementById('fcp-error').textContent = '';
+          document.getElementById('modal-force-change-pw').style.display = 'flex';
+          return;
+        }
         doLogin({
           name:dbUser.name, email:dbUser.email, role:dbUser.role,
           dept:dbUser.dept, designation:dbUser.designation||'', mgr:dbUser.mgr||''
@@ -6318,12 +6347,17 @@ function injectGoogleSSO(clientId){
 function renderGoogleButton(clientId){
   if(!window.google||!window.google.accounts) return;
   var w=document.getElementById('google-btn-wrap'); if(!w) return; w.innerHTML='';
-  window.google.accounts.id.initialize({client_id:clientId,callback:function(res){
+  window.google.accounts.id.initialize({client_id:clientId,callback:async function(res){
     try{
       var p=JSON.parse(atob(res.credential.split('.')[1]));
-      var user=typeof resolveUserFromEmail==='function'?resolveUserFromEmail(p.email):{name:p.name,email:p.email,role:'joiner',dept:'Hardware',designation:'Team Member',mgr:''};
-      if(p.name) user.name=p.name; doLogin(user);
-    }catch(e){alert('Login error. Please try again.');}
+      var user=await resolveUserFromEmail(p.email);
+      if(!user){
+        alert('This Google account ('+p.email+') is not registered with Elecbits Onboarding.\nAsk your admin to add you in User Management before signing in.');
+        return;
+      }
+      if(p.name) user.name=p.name;
+      doLogin(user);
+    }catch(e){console.warn('GSI callback error:',e);alert('Login error. Please try again.');}
   }});
   window.google.accounts.id.renderButton(w,{theme:'outline',size:'large',width:340,text:'continue_with'});
   window.google.accounts.id.prompt();
@@ -6349,6 +6383,28 @@ function runSplash(cb){ cb(); }
   </div>
 </div>
 
+<!-- ══ FORGOT PASSWORD MODAL ══ -->
+<div id="modal-forgot-password" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;">
+  <div style="background:#0F2040;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(0,0,0,.5);">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="width:44px;height:44px;background:linear-gradient(145deg,#3D6FE8,#2558D4);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;margin:0 auto 12px;">🔑</div>
+      <div style="font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;">Reset your password</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.5;">Enter your registered email — we'll generate a temporary password. You'll be asked to set a new one when you sign in.</div>
+    </div>
+    <div id="fp-stage-1" style="display:flex;flex-direction:column;gap:10px;">
+      <input class="login-input" type="email" id="fp-email" placeholder="Your email address" autocomplete="email"/>
+      <div id="fp-error" style="font-size:11px;color:#FCA5A5;min-height:16px;text-align:center;"></div>
+      <button class="login-cta" onclick="submitForgotPassword()">Generate Temporary Password</button>
+      <button type="button" style="background:none;border:none;color:rgba(255,255,255,.45);font-size:11px;cursor:pointer;font-family:var(--font);margin-top:4px;" onclick="closeForgotPassword()">Back to login</button>
+    </div>
+    <div id="fp-stage-2" style="display:none;text-align:center;">
+      <div style="font-size:12px;color:rgba(255,255,255,.55);margin-bottom:10px;">Use this temporary password to sign in. You'll be asked to set a new one immediately.</div>
+      <div id="fp-temp-pass" style="font-family:var(--mono);font-size:18px;font-weight:700;background:rgba(61,111,232,.15);border:1px solid rgba(61,111,232,.35);border-radius:8px;padding:14px;color:#fff;margin-bottom:14px;letter-spacing:.5px;user-select:all;"></div>
+      <button class="login-cta" onclick="closeForgotPassword()">Got it — back to login</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function submitForceChangePw(){
   var np=document.getElementById('fcp-new').value;
@@ -6361,12 +6417,89 @@ function submitForceChangePw(){
   if(!found){err.textContent='Session error. Please log in again.';return;}
   var u=(S.users||[]).find(function(x){return x.id===found.id;});
   if(u){u.password=np;u.mustChangePassword=false;}
+  // Persist new password to Supabase so the next login (any device) sees it.
+  if(window._supaReady && found.email){
+    sbPatch('users','email=eq.'+encodeURIComponent(String(found.email).toLowerCase()),
+      {password:np}).catch(function(e){ console.warn('users password patch error:',e); });
+  }
   save();
   document.getElementById('modal-force-change-pw').style.display='none';
   window._pendingLogin=null;
   var user={name:found.name,email:found.email,role:found.role,dept:found.dept,designation:found.designation,mgr:found.mgr};
   doLogin(user);
   toast('Password set! Welcome, '+found.name.split(' ')[0]+' 👋');
+}
+
+// ── FORGOT PASSWORD ───────────────────────────────────────────────
+function openForgotPassword(){
+  document.getElementById('fp-email').value='';
+  document.getElementById('fp-error').textContent='';
+  document.getElementById('fp-stage-1').style.display='flex';
+  document.getElementById('fp-stage-2').style.display='none';
+  document.getElementById('modal-forgot-password').style.display='flex';
+}
+function closeForgotPassword(){
+  document.getElementById('modal-forgot-password').style.display='none';
+}
+async function submitForgotPassword(){
+  var err=document.getElementById('fp-error'); err.textContent='';
+  var email=(document.getElementById('fp-email').value||'').trim().toLowerCase();
+  if(!email||!email.includes('@')){ err.textContent='Please enter a valid email address.'; return; }
+  // Generate a memorable temporary password
+  var words=['launch','build','ship','code','make','grow','lead','spark','start','craft'];
+  var tempPw=words[Math.floor(Math.random()*words.length)]+Math.floor(Math.random()*900+100);
+  var foundInDb=false;
+  if(window._supaReady){
+    try{
+      var rows=await sbGet('users','email=eq.'+encodeURIComponent(email));
+      if(rows&&rows[0]){
+        await sbPatch('users','email=eq.'+encodeURIComponent(email),{password:tempPw});
+        foundInDb=true;
+      }
+    }catch(e){ console.warn('forgot-password supabase error:',e); }
+  }
+  if(!S.users) S.users=[];
+  var u=S.users.find(function(x){return (x.email||'').toLowerCase()===email;});
+  if(u){
+    u.password=tempPw; u.mustChangePassword=true; save();
+  } else if(foundInDb){
+    // Supabase had the user but local doesn't — stash a stub so the
+    // mustChangePassword flag is honored on next login.
+    S.users.push({id:Date.now(), email:email, password:tempPw, mustChangePassword:true, active:true});
+    save();
+  } else {
+    err.textContent='No account found with this email.'; return;
+  }
+  document.getElementById('fp-temp-pass').textContent=tempPw;
+  document.getElementById('fp-stage-1').style.display='none';
+  document.getElementById('fp-stage-2').style.display='block';
+}
+
+// ── GOOGLE SSO: resolve a Google email to a registered account ────
+// Returns the user object if email matches an active S.users / Supabase
+// row; null otherwise. Async because we may need a Supabase round-trip
+// when the local store hasn't been hydrated yet.
+async function resolveUserFromEmail(email){
+  var em=String(email||'').toLowerCase().trim();
+  if(!em) return null;
+  var local=(S.users||[]).find(function(x){
+    return (x.email||'').toLowerCase()===em && x.active!==false;
+  });
+  if(local){
+    return {name:local.name, email:local.email, role:local.role,
+      dept:local.dept||'', designation:local.designation||'', mgr:local.mgr||''};
+  }
+  if(window._supaReady){
+    try{
+      var rows=await sbGet('users','email=eq.'+encodeURIComponent(em)+'&active=eq.true');
+      if(rows&&rows[0]){
+        var r=rows[0];
+        return {name:r.name||em.split('@')[0], email:r.email, role:r.role||'joiner',
+          dept:r.dept||'', designation:r.designation||'', mgr:r.mgr||''};
+      }
+    }catch(e){ console.warn('resolveUserFromEmail supabase error:',e); }
+  }
+  return null;
 }
 </script>
 
