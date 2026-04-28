@@ -3500,7 +3500,7 @@ viewRenderers['lead-dashboard']=el=>{
     <div style="font-size:13px;font-weight:700;margin-bottom:10px">Team at a glance</div>
     ${team.slice(0,4).map(p=>`<div class="card-sm" style="margin-bottom:8px;display:flex;align-items:center;gap:12px">
       <div style="width:34px;height:34px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
-      <div style="flex:1"><div style="font-size:13px;font-weight:600">${p.name}</div><div class="muted">${p.role||dept} · Day ${p.day}</div></div>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${p.name}</div><div class="muted">${p.role||dept} · Day ${_joinerDay(p)||p.day||1}</div></div>
       <span class="mini-bar"><span class="mini-bar-fill" style="width:${p.progress}%"></span></span>
       <span style="font-family:var(--mono);font-size:10px;width:28px">${p.progress}%</span>
       <span class="chip ${chipCol(p.onboardStatus||'New joiner')}">${p.onboardStatus||'New joiner'}</span>
@@ -3532,7 +3532,7 @@ viewRenderers['lead-members']=el=>{
               </div>
             </td>
             <td class="muted">${p.track}</td>
-            <td style="font-family:var(--mono);font-size:11px">Day ${p.day}</td>
+            <td style="font-family:var(--mono);font-size:11px">Day ${_joinerDay(p)||p.day||1}</td>
             <td class="muted">${p.mgr||'—'}</td>
             <td>
               <span class="mini-bar"><span class="mini-bar-fill" style="width:${p.progress}%"></span></span>
@@ -3604,7 +3604,7 @@ viewRenderers['lead-view']=viewRenderers['lead-progress']=el=>{
         <div class="flex-between" style="margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">${p.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
-            <div><div style="font-size:13px;font-weight:700">${p.name}</div><div class="muted">${p.role||'—'} · ${p.track} · Day ${p.day}</div></div>
+            <div><div style="font-size:13px;font-weight:700">${p.name}</div><div class="muted">${p.role||'—'} · ${p.track} · Day ${_joinerDay(p)||p.day||1}</div></div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
             <span class="chip ${chipCol(status)}">${status}</span>
@@ -5255,7 +5255,7 @@ function openJoinerDetail(id){
   document.getElementById('jd-body').innerHTML=`
     <div class="grid4" style="margin-bottom:16px">
       <div class="stat-card"><div class="slbl">Department</div><div class="snum" style="font-size:16px;margin-top:4px">${p.dept}</div></div>
-      <div class="stat-card"><div class="slbl">Day</div><div class="snum">${p.day}</div></div>
+      <div class="stat-card"><div class="slbl">Day</div><div class="snum">${_joinerDay(p)||p.day||1}</div></div>
       <div class="stat-card"><div class="slbl">Progress</div><div class="snum" style="color:var(--blue)">${p.progress}%</div></div>
       <div class="stat-card"><div class="slbl">Est. Complete</div><div class="snum" style="font-size:13px;margin-top:4px">${isComplete?'✅ Done':estComplete()}</div></div>
     </div>
