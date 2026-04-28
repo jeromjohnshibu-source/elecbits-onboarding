@@ -164,7 +164,8 @@ to{opacity:1;transform:translateY(0)}}
 
 .sb-user{margin-top:auto;width:100%;padding:10px 8px;border-top:1px solid var(--navy-b);flex-shrink:0}
 .sb-user-row{display:flex;align-items:center;padding:8px;background:rgba(255,255,255,.05);border-radius:var(--r);border:1px solid var(--navy-b);cursor:pointer;gap:8px;overflow:hidden}
-.sb-av{width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0}
+.sb-av{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c8cff 0%,#3d6fe8 55%,#1e4fc7 100%);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;flex-shrink:0;box-shadow:0 2px 5px rgba(30,79,199,.35),inset 0 1px 0 rgba(255,255,255,.22);transition:transform .65s cubic-bezier(.4,.15,.2,1),box-shadow .2s}
+.sb-user-row:hover .sb-av{transform:rotate(360deg);box-shadow:0 4px 10px rgba(61,111,232,.55),inset 0 1px 0 rgba(255,255,255,.3)}
 .sb-uinfo{opacity:0;transition:opacity .1s;white-space:nowrap;overflow:hidden}
 .sidebar:hover .sb-uinfo,.sidebar.expanded .sb-uinfo{opacity:1}
 .sb-uname{font-size:11px;font-weight:600;color:#fff}
@@ -176,7 +177,8 @@ to{opacity:1;transform:translateY(0)}}
 .topbar-title{font-size:14px;font-weight:700;flex:1;letter-spacing:-.3px}
 .topbar-right{display:flex;align-items:center;gap:10px}
 .profile-wrap{position:relative}
-.profile-btn{width:32px;height:32px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;cursor:pointer;border:none;flex-shrink:0}
+.profile-btn{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c8cff 0%,#3d6fe8 55%,#1e4fc7 100%);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;cursor:pointer;border:none;flex-shrink:0;box-shadow:0 2px 6px rgba(30,79,199,.35),inset 0 1px 0 rgba(255,255,255,.22);transition:transform .65s cubic-bezier(.4,.15,.2,1),box-shadow .2s,filter .2s}
+.profile-btn:hover{transform:rotate(360deg);box-shadow:0 4px 12px rgba(61,111,232,.55),inset 0 1px 0 rgba(255,255,255,.3);filter:brightness(1.06)}
 .pd{position:absolute;top:44px;right:0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:6px;min-width:200px;box-shadow:var(--sh2);display:none;z-index:200}
 .pd.open{display:block}
 .pd-hd{padding:10px 12px;border-bottom:1px solid var(--border);margin-bottom:4px}
