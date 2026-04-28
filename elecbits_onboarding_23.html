@@ -3500,6 +3500,7 @@ viewRenderers['lead-dashboard']=el=>{
       <span class="mini-bar"><span class="mini-bar-fill" style="width:${p.progress}%"></span></span>
       <span style="font-family:var(--mono);font-size:10px;width:28px">${p.progress}%</span>
       <span class="chip ${chipCol(p.onboardStatus||'New joiner')}">${p.onboardStatus||'New joiner'}</span>
+      ${_workUpdateCellHtml(p)}
     </div>`).join('')}`;
 };
 
@@ -3604,6 +3605,7 @@ viewRenderers['lead-view']=viewRenderers['lead-progress']=el=>{
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
             <span class="chip ${chipCol(status)}">${status}</span>
             ${!isComplete?`<span class="muted" style="font-size:10px">Est: ${estDate(p)}</span>`:''}
+            ${_workUpdateCellHtml(p)}
             <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">${btnLabel}</button>
           </div>
         </div>
