@@ -785,6 +785,38 @@ to{opacity:1;transform:translateY(0)}}
   </div>
 </div>
 
+<!-- ══ EDIT / ADD DEPARTMENT (admin) ══ -->
+<div class="modal-backdrop" id="modal-edit-dept">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-hd"><h3 id="ed-modal-title">Department</h3><button class="modal-close" onclick="closeModal('modal-edit-dept')">✕</button></div>
+    <input type="hidden" id="ed-original-name"/>
+    <div style="display:grid;grid-template-columns:90px 1fr;gap:12px">
+      <div class="fg"><label class="flabel">Emoji</label><input class="finput" id="ed-emoji" placeholder="🔧" maxlength="6" style="text-align:center;font-size:18px"/></div>
+      <div class="fg"><label class="flabel">Department Name</label><input class="finput" id="ed-name" placeholder="e.g. Hardware"/></div>
+    </div>
+    <div class="fg"><label class="flabel">Short Description</label><input class="finput" id="ed-desc" placeholder="One-line summary shown on the joiner card"/></div>
+    <div class="fg"><label class="flabel">Department Vision</label><textarea class="ftextarea" id="ed-vision" style="min-height:70px" placeholder="What this department aspires to do"></textarea></div>
+    <div class="fg"><label class="flabel">Team</label>
+      <div id="ed-team-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <button type="button" class="btn outline xs" onclick="edAddTeamRow()" style="margin-top:8px">+ Add Member</button>
+    </div>
+    <div class="fg"><label class="flabel">Projects</label>
+      <div id="ed-projects-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      <button type="button" class="btn outline xs" onclick="edAddProjectRow()" style="margin-top:8px">+ Add Project</button>
+    </div>
+    <div class="fg"><label class="flabel">Tools (comma-separated)</label><input class="finput" id="ed-tools" placeholder="KiCad, Altium Designer, …"/></div>
+    <div class="fg"><label class="flabel">Communication / Channels</label><input class="finput" id="ed-channels" placeholder="#hardware on Slack · Weekly sync Mondays 10am"/></div>
+    <div class="fg" style="display:flex;align-items:center;gap:10px;padding-top:6px">
+      <input type="checkbox" id="ed-enabled" checked style="accent-color:var(--blue);width:16px;height:16px;cursor:pointer"/>
+      <label for="ed-enabled" style="font-size:13px;font-weight:600;color:var(--text);cursor:pointer">Visible to joiners</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('modal-edit-dept')">Cancel</button>
+      <button class="btn primary" onclick="saveDept()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ADD / EDIT USER ══ -->
 <div class="modal-backdrop" id="modal-add-user">
   <div class="modal" style="max-width:500px;">
@@ -1614,6 +1646,62 @@ async function _backfillReflections(user) {
   save();
 }
 
+// ── DEPARTMENTS: cloud-backed catalog (admin-editable, joiner-visible) ──
+async function sbLoadDepartments(){
+  if(!window._supaReady) return null;
+  try{
+    const rows = await sbGet('departments');
+    if(!rows) return null;
+    return rows.map(r => ({
+      name: r.name, emoji: r.emoji||'🏢',
+      description: r.description||'',
+      vision: r.vision||'',
+      enabled: r.enabled !== false,
+      team: Array.isArray(r.team)?r.team:[],
+      projects: Array.isArray(r.projects)?r.projects:[],
+      tools: Array.isArray(r.tools)?r.tools:[],
+      channels: r.channels||'',
+      sortOrder: r.sort_order||0,
+    })).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  }catch(e){ console.warn('sbLoadDepartments:', e); return null; }
+}
+function _deptToRow(d, idx){
+  return {
+    name: d.name, emoji: d.emoji||'',
+    description: d.description||'',
+    vision: d.vision||'',
+    enabled: d.enabled !== false,
+    team: d.team||[], projects: d.projects||[],
+    tools: d.tools||[], channels: d.channels||'',
+    sort_order: (typeof idx==='number') ? idx : (d.sortOrder||0),
+    updated_at: new Date().toISOString()
+  };
+}
+async function sbSaveDepartment(d, idx){
+  if(!window._supaReady) return null;
+  try{ return await sbUpsert('departments', _deptToRow(d, idx)); }
+  catch(e){ console.warn('sbSaveDepartment:', e); return null; }
+}
+async function sbDeleteDepartment(name){
+  if(!window._supaReady) return null;
+  try{ return await sbDelete('departments', 'name=eq.'+encodeURIComponent(name)); }
+  catch(e){ console.warn('sbDeleteDepartment:', e); return null; }
+}
+async function sbRenameDepartment(oldName, newName){
+  if(!window._supaReady || !oldName || !newName || oldName===newName) return null;
+  try{
+    // Patch name on existing row, plus cascade to people.dept and resources.dept
+    await sbPatch('departments', 'name=eq.'+encodeURIComponent(oldName), { name:newName, updated_at:new Date().toISOString() });
+    await sbPatch('people',      'dept=eq.'+encodeURIComponent(oldName), { dept:newName });
+    await sbPatch('resources',   'dept=eq.'+encodeURIComponent(oldName), { dept:newName });
+  }catch(e){ console.warn('sbRenameDepartment:', e); }
+}
+async function sbSeedDepartments(arr){
+  if(!window._supaReady || !arr || !arr.length) return null;
+  try{ return await sbUpsert('departments', arr.map((d,i)=>_deptToRow(d,i))); }
+  catch(e){ console.warn('sbSeedDepartments:', e); return null; }
+}
+
 // Flag that Supabase is ready
 window._supaReady = true;
 console.log('✓ Supabase connected:', SUPA_URL);
@@ -1646,6 +1734,94 @@ const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
     });
   }catch(e){}
 })();
+
+// ── DEPARTMENT CATALOG SEED ──
+// Source of truth for every department dropdown, the joiner Departments page,
+// and the per-department detail modal. Admins edit this via the Departments
+// admin view; changes flow back here and to Supabase.
+const INITIAL_DEPT_CATALOG = [
+  { name:'Hardware', emoji:'🔧', description:'PCB design, schematic, prototyping, testing, component selection', enabled:true,
+    vision:'Build world-class electronics hardware that powers India\'s next generation of products.',
+    team:[
+      {name:'Nikhil Rawat', role:'Head of Hardware', level:'head'},
+      {name:'Sneha Rao', role:'Senior HW Engineer', level:'senior'},
+      {name:'Aanya Kumar', role:'Associate HW Engineer', level:'member'},
+      {name:'Rohan Das', role:'HW Engineer', level:'member'},
+    ],
+    projects:[
+      {name:'XOR PCB Fabrication Engine', status:'Active', desc:'AI-powered PCB DFM and quoting system'},
+      {name:'Industrial Motor Driver v3', status:'Active', desc:'High-current motor driver for automotive clients'},
+      {name:'E-Paper Display Module', status:'Completed', desc:'Low-power display for logistics tracking'},
+    ],
+    tools:['KiCad','Altium Designer','LTSpice','SolidWorks','Git'],
+    channels:'#hardware on Slack · Weekly sync Mondays 10am' },
+  { name:'Firmware', emoji:'💾', description:'Embedded software, microcontroller programming, bring-up', enabled:true,
+    vision:'Write rock-solid firmware that makes every Elecbits product come alive reliably and efficiently.',
+    team:[
+      {name:'Priya Mehta', role:'Senior Firmware Engineer', level:'head'},
+      {name:'Arjun Kumar', role:'Firmware Engineer', level:'member'},
+    ],
+    projects:[
+      {name:'XOR Motor Driver Firmware', status:'Active', desc:'Firmware for industrial motor driver v3'},
+      {name:'BLE Gateway Firmware', status:'Active', desc:'Bluetooth gateway for IoT devices'},
+    ],
+    tools:['VS Code + PlatformIO','GDB','STM32CubeIDE','FreeRTOS','Git'],
+    channels:'#firmware on Slack' },
+  { name:'ODM', emoji:'📦', description:'Original Design Manufacturing — client intake to production', enabled:true,
+    vision:'Be India\'s fastest and most reliable ODM partner — from idea to shelf-ready product.',
+    team:[
+      {name:'Saurav Singh', role:'Head of ODM', level:'head'},
+      {name:'Rahul Singh', role:'ODM Coordinator', level:'member'},
+      {name:'Dev Patel', role:'ODM Analyst', level:'member'},
+    ],
+    projects:[
+      {name:'Schneider Smart Panel', status:'Active', desc:'Industrial control panel ODM project'},
+      {name:'Urban Company IoT Device', status:'Completed', desc:'Connected home service device'},
+    ],
+    tools:['Jira','Notion','Google Drive','Slack','Monday.com'],
+    channels:'#odm on Slack · Stand-up daily 9am' },
+  { name:'Box Build', emoji:'🏭', description:'Final assembly, integration, QC, dispatch', enabled:true,
+    vision:'Deliver perfectly assembled, tested, and shipped products — zero defects, every time.',
+    team:[
+      {name:'Karan Tiwari', role:'Box Build Lead', level:'head'},
+      {name:'Amit Joshi', role:'Box Build Technician', level:'member'},
+    ],
+    projects:[
+      {name:'E-Payment Device Assembly', status:'Active', desc:'High-volume box build for fintech client'},
+      {name:'Power Meter Unit', status:'Active', desc:'Energy monitoring device for industrial use'},
+    ],
+    tools:['Assembly SOPs','Quality Checklists','Barcode Scanner System','ERP'],
+    channels:'#boxbuild on Slack' },
+  { name:'Project Management', emoji:'📊', description:'Timelines, cross-functional coordination, client delivery', enabled:true,
+    vision:'Own the project end-to-end — from the first client call to the last feedback note. Be the single point of accountability for every Elecbits project.',
+    team:[
+      {name:'Arjun Sharma', role:'Project Management Lead', level:'head'},
+      {name:'Neha Iyer', role:'Senior Project Manager', level:'senior'},
+      {name:'Vikram Rao', role:'Project Manager', level:'member'},
+    ],
+    projects:[
+      {name:'Schneider Smart Panel — PM', status:'Active', desc:'End-to-end project coordination for Schneider industrial panel'},
+      {name:'Urban Company IoT Device — PM', status:'Completed', desc:'Full project lifecycle from PO to delivery and CRM'},
+      {name:'XOR Motor Driver — PM', status:'Active', desc:'Hardware + firmware project coordination'},
+    ],
+    tools:['XoR','Google Drive','Slack','Google Sheets','Notion'],
+    channels:'#project-management on Slack · Daily stand-up 9:30am' },
+  { name:'Supply Chain', emoji:'🔗', description:'Vendor management, RFQ, component sourcing, lead times', enabled:true,
+    vision:'Secure the right components at the right price and the right time — keep every Elecbits build moving without a single stock-out.',
+    team:[
+      {name:'Manish Gupta', role:'Head of Supply Chain', level:'head'},
+      {name:'Pooja Verma', role:'Senior Procurement Manager', level:'senior'},
+      {name:'Aditya Nair', role:'Supply Chain Analyst', level:'member'},
+      {name:'Isha Bansal', role:'Vendor Coordinator', level:'member'},
+    ],
+    projects:[
+      {name:'XOR Motor Driver — Sourcing', status:'Active', desc:'Multi-vendor sourcing for motor driver BOM'},
+      {name:'Global IC Shortage Mitigation', status:'Active', desc:'Alternate part qualification and allocation tracking'},
+      {name:'Vendor Consolidation Drive', status:'Completed', desc:'Reduced vendor base by 35% while keeping lead times stable'},
+    ],
+    tools:['XoR','SAP','Excel','Google Sheets','Slack'],
+    channels:'#supply-chain on Slack · Weekly vendor review Fridays 3pm' },
+];
 
 var S = LS('state') || {
   user: null,
@@ -1795,10 +1971,15 @@ const _SECTION_TEMPLATE = (function(){
       {id:3,name:'Aanya Kumar', email:'aanya@elecbits.in', password:'join123', role:'joiner',dept:'Hardware',           designation:'Associate Hardware Engineer', mgr:'Nikhil Rawat', active:true,createdAt:'2024-01-15'},
     ],
     workflows:[], nudges:[], notifRules:[], pendingApprovals:[], feedbacks:[], quizAnswers:{}, deptModules:[], reflections:[], resources:[],
+    deptCatalog: JSON.parse(JSON.stringify(INITIAL_DEPT_CATALOG)),
   };
   Object.keys(d).forEach(function(k){
     if(S[k]===undefined || S[k]===null) S[k]=d[k];
   });
+  // Always make sure the catalog has at least the seed if it ended up empty
+  if(!Array.isArray(S.deptCatalog) || !S.deptCatalog.length){
+    S.deptCatalog = JSON.parse(JSON.stringify(INITIAL_DEPT_CATALOG));
+  }
 })();
 
 // ── Global session map: moduleId → sessionId ──
@@ -2252,6 +2433,21 @@ function doLogin(user){
       if(res){ S.resources=res; save(); if(typeof renderView==='function') try{ renderView(); }catch(e){} }
     }).catch(function(e){ console.warn('sbLoadResources error:',e); });
   }
+  // SUPABASE: sync department catalog (admin-editable, joiner-visible)
+  if(window._supaReady){
+    sbLoadDepartments().then(function(rows){
+      if(rows && rows.length){
+        S.deptCatalog = rows;
+        save();
+        if(typeof populateDeptDropdowns==='function') populateDeptDropdowns();
+        if(typeof renderView==='function') try{ renderView(); }catch(e){}
+      } else if(rows && !rows.length && user.role==='admin'){
+        // First admin login on an empty table — seed it from the local catalog
+        sbSeedDepartments(S.deptCatalog||INITIAL_DEPT_CATALOG)
+          .catch(function(e){ console.warn('sbSeedDepartments:', e); });
+      }
+    }).catch(function(e){ console.warn('sbLoadDepartments error:',e); });
+  }
   // SUPABASE: push local-only module docs (from addDocToModule path) up to DB on admin/lead login
   if((user.role==='admin'||user.role==='lead') && window._supaReady){
     _backfillDocsToSupabase().catch(function(e){ console.warn('docs backfill error:',e); });
@@ -2400,6 +2596,7 @@ const navDefs = {
     {section:'Users'},
     {id:'admin-users',icon:'user-cog',label:'User Management'},
     {section:'Config'},
+    {id:'admin-departments',icon:'departments',label:'Departments'},
     {id:'workflows',icon:'workflow',label:'Workflows'},
     {id:'notifications',icon:'bell',label:'Notification Rules'},
   ],
@@ -2715,24 +2912,66 @@ viewRenderers['milestones']=el=>{
 // DEPARTMENTS
 // ──────────────────────────────────────────────
 viewRenderers['departments']=el=>{
-  const depts=[
-    {emoji:'🔧',name:'Hardware',desc:'PCB design, schematic, prototyping, testing, component selection',pct:10,active:true},
-    {emoji:'💾',name:'Firmware',desc:'Embedded software, microcontroller programming, bring-up',pct:0},
-    {emoji:'📦',name:'ODM',desc:'Original Design Manufacturing — client intake to production',pct:0},
-    {emoji:'🏭',name:'Box Build',desc:'Final assembly, integration, QC, dispatch',pct:0},
-    {emoji:'📊',name:'Project Management',desc:'Timelines, cross-functional coordination, client delivery',pct:0},
-    {emoji:'🔗',name:'Supply Chain',desc:'Vendor management, RFQ, component sourcing, lead times',pct:0},
-  ];
+  const myDept=(S.user&&S.user.dept)||'';
+  const cat=(S.deptCatalog||[]).filter(d=>d.enabled!==false);
+  // Joiner own-department progress (rough estimate based on completed modules ratio)
+  let myPct=0;
+  if(S.sections){
+    const all=S.sections.flatMap(s=>s.modules||[]);
+    const done=all.filter(m=>m.status==='done').length;
+    myPct=all.length?Math.round(done/all.length*100):0;
+  }
   el.innerHTML=`<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:16px">Departments at Elecbits</div>
-    <div class="grid2">${depts.map(d=>`
-      <div class="card ${d.active?'dept-card active':''}" style="cursor:pointer;transition:all .15s;${d.soon?'opacity:.4;pointer-events:none':''}" onclick="openDeptPage('${d.name}')">
-        <div style="font-size:24px;margin-bottom:8px">${d.emoji}</div>
+    <div class="grid2">${cat.map(d=>{
+      const isMine=d.name===myDept;
+      const pct=isMine?myPct:0;
+      const safe=String(d.name).replace(/'/g,"\\'");
+      return `<div class="card ${isMine?'dept-card active':''}" style="cursor:pointer;transition:all .15s;" onclick="openDeptPage('${safe}')">
+        <div style="font-size:24px;margin-bottom:8px">${d.emoji||'🏢'}</div>
         <div style="font-size:13px;font-weight:800;margin-bottom:4px">${d.name}</div>
-        <div class="muted" style="margin-bottom:12px;line-height:1.5">${d.desc}</div>
-        <div class="pb-wrap"><div class="pb" style="width:${d.pct}%"></div></div>
-        <div class="muted" style="margin-top:4px">${d.active?'Your dept · '+d.pct+'% complete':d.soon?'Coming soon':'Explore →'}</div>
-      </div>`).join('')}
-    </div>`;
+        <div class="muted" style="margin-bottom:12px;line-height:1.5">${d.description||''}</div>
+        <div class="pb-wrap"><div class="pb" style="width:${pct}%"></div></div>
+        <div class="muted" style="margin-top:4px">${isMine?'Your dept · '+pct+'% complete':'Explore →'}</div>
+      </div>`;
+    }).join('')}
+    </div>${cat.length?'':'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">🏢</div><div style="font-size:14px;font-weight:600">No departments yet</div></div>'}`;
+};
+
+// ──────────────────────────────────────────────
+// ADMIN — DEPARTMENTS (editable catalog)
+// ──────────────────────────────────────────────
+viewRenderers['admin-departments']=el=>{
+  const cat=S.deptCatalog||[];
+  el.innerHTML=`<div class="flex-between" style="margin-bottom:16px">
+      <div>
+        <div style="font-size:16px;font-weight:800;letter-spacing:-.4px">Departments</div>
+        <div class="muted" style="margin-top:4px;line-height:1.5">Edit names, emoji, vision, team, projects, tools and channels — changes show up for joiners across every device.</div>
+      </div>
+      <button class="btn primary sm" onclick="openDeptEdit('')">+ New Department</button>
+    </div>
+    ${cat.length?cat.map(function(d){
+      const safe=String(d.name).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const visible=d.enabled!==false;
+      return `<div class="card" style="margin-bottom:12px">
+        <div class="flex-between" style="gap:12px;align-items:flex-start">
+          <div style="display:flex;gap:14px;align-items:flex-start;flex:1;min-width:0">
+            <div style="font-size:30px;line-height:1;flex-shrink:0">${d.emoji||'🏢'}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <div style="font-size:14px;font-weight:800">${d.name}</div>
+                <span class="chip ${visible?'green':'gray'}">${visible?'Visible to joiners':'Hidden'}</span>
+              </div>
+              <div class="muted" style="margin-top:4px;line-height:1.5">${d.description||'<em style="opacity:.6">No description</em>'}</div>
+              <div class="muted" style="margin-top:8px;font-size:11px">${(d.team||[]).length} member${(d.team||[]).length===1?'':'s'} · ${(d.projects||[]).length} project${(d.projects||[]).length===1?'':'s'} · ${(d.tools||[]).length} tool${(d.tools||[]).length===1?'':'s'}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn outline xs" onclick="openDeptEdit('${safe}')">Edit</button>
+            <button class="btn ghost xs" title="Delete" onclick="deleteDeptByName('${safe}')">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join(''):'<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">🏢</div><div style="font-size:14px;font-weight:600">No departments yet</div><div style="font-size:12px;margin-top:4px">Click "New Department" to add one.</div></div>'}`;
 };
 
 // ──────────────────────────────────────────────
@@ -3712,61 +3951,11 @@ function saveMilestoneNote(){
 // ══════════════════════════════════════════════
 // DEPT PAGE
 // ══════════════════════════════════════════════
-const deptData={
-  Hardware:{vision:'Build world-class electronics hardware that powers India\'s next generation of products.',team:[
-    {name:'Nikhil Rawat',role:'Head of Hardware',level:'head'},
-    {name:'Sneha Rao',role:'Senior HW Engineer',level:'senior'},
-    {name:'Aanya Kumar',role:'Associate HW Engineer',level:'member'},
-    {name:'Rohan Das',role:'HW Engineer',level:'member'},
-  ],projects:[
-    {name:'XOR PCB Fabrication Engine',status:'Active',desc:'AI-powered PCB DFM and quoting system'},
-    {name:'Industrial Motor Driver v3',status:'Active',desc:'High-current motor driver for automotive clients'},
-    {name:'E-Paper Display Module',status:'Completed',desc:'Low-power display for logistics tracking'},
-  ],tools:['KiCad','Altium Designer','LTSpice','SolidWorks','Git'],channels:'#hardware on Slack · Weekly sync Mondays 10am'},
-  Firmware:{vision:'Write rock-solid firmware that makes every Elecbits product come alive reliably and efficiently.',team:[
-    {name:'Priya Mehta',role:'Senior Firmware Engineer',level:'head'},
-    {name:'Arjun Kumar',role:'Firmware Engineer',level:'member'},
-  ],projects:[
-    {name:'XOR Motor Driver Firmware',status:'Active',desc:'Firmware for industrial motor driver v3'},
-    {name:'BLE Gateway Firmware',status:'Active',desc:'Bluetooth gateway for IoT devices'},
-  ],tools:['VS Code + PlatformIO','GDB','STM32CubeIDE','FreeRTOS','Git'],channels:'#firmware on Slack'},
-  ODM:{vision:'Be India\'s fastest and most reliable ODM partner — from idea to shelf-ready product.',team:[
-    {name:'Saurav Singh',role:'Head of ODM',level:'head'},
-    {name:'Rahul Singh',role:'ODM Coordinator',level:'member'},
-    {name:'Dev Patel',role:'ODM Analyst',level:'member'},
-  ],projects:[
-    {name:'Schneider Smart Panel',status:'Active',desc:'Industrial control panel ODM project'},
-    {name:'Urban Company IoT Device',status:'Completed',desc:'Connected home service device'},
-  ],tools:['Jira','Notion','Google Drive','Slack','Monday.com'],channels:'#odm on Slack · Stand-up daily 9am'},
-  'Box Build':{vision:'Deliver perfectly assembled, tested, and shipped products — zero defects, every time.',team:[
-    {name:'Karan Tiwari',role:'Box Build Lead',level:'head'},
-    {name:'Amit Joshi',role:'Box Build Technician',level:'member'},
-  ],projects:[
-    {name:'E-Payment Device Assembly',status:'Active',desc:'High-volume box build for fintech client'},
-    {name:'Power Meter Unit',status:'Active',desc:'Energy monitoring device for industrial use'},
-  ],tools:['Assembly SOPs','Quality Checklists','Barcode Scanner System','ERP'],channels:'#boxbuild on Slack'},
-  'Project Management':{vision:'Own the project end-to-end — from the first client call to the last feedback note. Be the single point of accountability for every Elecbits project.',team:[
-    {name:'Arjun Sharma',role:'Project Management Lead',level:'head'},
-    {name:'Neha Iyer',role:'Senior Project Manager',level:'senior'},
-    {name:'Vikram Rao',role:'Project Manager',level:'member'},
-  ],projects:[
-    {name:'Schneider Smart Panel — PM',status:'Active',desc:'End-to-end project coordination for Schneider industrial panel'},
-    {name:'Urban Company IoT Device — PM',status:'Completed',desc:'Full project lifecycle from PO to delivery and CRM'},
-    {name:'XOR Motor Driver — PM',status:'Active',desc:'Hardware + firmware project coordination'},
-  ],tools:['XoR','Google Drive','Slack','Google Sheets','Notion'],channels:'#project-management on Slack · Daily stand-up 9:30am'},
-  'Supply Chain':{vision:'Secure the right components at the right price and the right time — keep every Elecbits build moving without a single stock-out.',team:[
-    {name:'Manish Gupta',role:'Head of Supply Chain',level:'head'},
-    {name:'Pooja Verma',role:'Senior Procurement Manager',level:'senior'},
-    {name:'Aditya Nair',role:'Supply Chain Analyst',level:'member'},
-    {name:'Isha Bansal',role:'Vendor Coordinator',level:'member'},
-  ],projects:[
-    {name:'XOR Motor Driver — Sourcing',status:'Active',desc:'Multi-vendor sourcing for motor driver BOM'},
-    {name:'Global IC Shortage Mitigation',status:'Active',desc:'Alternate part qualification and allocation tracking'},
-    {name:'Vendor Consolidation Drive',status:'Completed',desc:'Reduced vendor base by 35% while keeping lead times stable'},
-  ],tools:['XoR','SAP','Excel','Google Sheets','Slack'],channels:'#supply-chain on Slack · Weekly vendor review Fridays 3pm'},
-};
+function getDeptByName(name){
+  return (S.deptCatalog||[]).find(function(d){ return d.name===name; });
+}
 function openDeptPage(name){
-  const d=deptData[name]||{vision:'Department page coming soon.',team:[],projects:[],tools:[],channels:'—'};
+  const d=getDeptByName(name)||{vision:'Department page coming soon.',team:[],projects:[],tools:[],channels:'—'};
   const headNode=d.team.find(t=>t.level==='head');
   const others=d.team.filter(t=>t.level!=='head');
   document.getElementById('dept-modal-title').textContent=name+' Department';
@@ -3799,6 +3988,196 @@ function openDeptPage(name){
       </div>
     </div>`;
   openModal('modal-dept');
+}
+
+// ══════════════════════════════════════════════
+// DEPARTMENT CATALOG — admin edit + dropdown sync
+// ══════════════════════════════════════════════
+
+// Build the rows inside the team and projects sections of the edit modal.
+// `data` is the row's saved values; missing fields render as blanks.
+function _edTeamRowHTML(data){
+  data = data || {};
+  const lvl = data.level || 'member';
+  const opts = ['head','senior','member'].map(function(l){
+    return '<option value="'+l+'"'+(l===lvl?' selected':'')+'>'+(l[0].toUpperCase()+l.slice(1))+'</option>';
+  }).join('');
+  return ''
+    + '<div class="ed-row" style="display:grid;grid-template-columns:1fr 1fr 110px auto;gap:6px;align-items:center">'
+    +   '<input class="finput ed-tm-name" placeholder="Name" value="'+(data.name||'').replace(/"/g,'&quot;')+'"/>'
+    +   '<input class="finput ed-tm-role" placeholder="Role" value="'+(data.role||'').replace(/"/g,'&quot;')+'"/>'
+    +   '<select class="fselect ed-tm-level">'+opts+'</select>'
+    +   '<button type="button" class="btn ghost xs" onclick="this.parentNode.remove()">✕</button>'
+    + '</div>';
+}
+function _edProjectRowHTML(data){
+  data = data || {};
+  const status = data.status || 'Active';
+  const statusOpts = ['Active','Completed','On Hold','Cancelled'].map(function(s){
+    return '<option value="'+s+'"'+(s===status?' selected':'')+'>'+s+'</option>';
+  }).join('');
+  return ''
+    + '<div class="ed-row" style="display:grid;grid-template-columns:1fr 130px 2fr auto;gap:6px;align-items:center">'
+    +   '<input class="finput ed-pr-name" placeholder="Project name" value="'+(data.name||'').replace(/"/g,'&quot;')+'"/>'
+    +   '<select class="fselect ed-pr-status">'+statusOpts+'</select>'
+    +   '<input class="finput ed-pr-desc" placeholder="Short description" value="'+(data.desc||'').replace(/"/g,'&quot;')+'"/>'
+    +   '<button type="button" class="btn ghost xs" onclick="this.parentNode.remove()">✕</button>'
+    + '</div>';
+}
+function edAddTeamRow(data){
+  const list = document.getElementById('ed-team-list');
+  if(!list) return;
+  list.insertAdjacentHTML('beforeend', _edTeamRowHTML(data));
+}
+function edAddProjectRow(data){
+  const list = document.getElementById('ed-projects-list');
+  if(!list) return;
+  list.insertAdjacentHTML('beforeend', _edProjectRowHTML(data));
+}
+
+// Open the edit modal. Pass an empty string (or no name) to add a new dept.
+function openDeptEdit(name){
+  const existing = name ? getDeptByName(name) : null;
+  document.getElementById('ed-modal-title').textContent = existing ? 'Edit Department' : 'New Department';
+  document.getElementById('ed-original-name').value = existing ? existing.name : '';
+  document.getElementById('ed-emoji').value   = existing ? (existing.emoji||'') : '';
+  document.getElementById('ed-name').value    = existing ? existing.name : '';
+  document.getElementById('ed-desc').value    = existing ? (existing.description||'') : '';
+  document.getElementById('ed-vision').value  = existing ? (existing.vision||'') : '';
+  document.getElementById('ed-tools').value   = existing ? (existing.tools||[]).join(', ') : '';
+  document.getElementById('ed-channels').value= existing ? (existing.channels||'') : '';
+  document.getElementById('ed-enabled').checked = existing ? (existing.enabled !== false) : true;
+  document.getElementById('ed-team-list').innerHTML = '';
+  document.getElementById('ed-projects-list').innerHTML = '';
+  if(existing){
+    (existing.team||[]).forEach(edAddTeamRow);
+    (existing.projects||[]).forEach(edAddProjectRow);
+  }
+  openModal('modal-edit-dept');
+}
+
+// Collect the current modal state into a department object.
+function _collectDeptFromModal(){
+  const teamRows = document.querySelectorAll('#ed-team-list .ed-row');
+  const team = Array.from(teamRows).map(function(r){
+    return {
+      name:  (r.querySelector('.ed-tm-name').value||'').trim(),
+      role:  (r.querySelector('.ed-tm-role').value||'').trim(),
+      level: r.querySelector('.ed-tm-level').value||'member'
+    };
+  }).filter(function(m){ return m.name||m.role; });
+  const projectRows = document.querySelectorAll('#ed-projects-list .ed-row');
+  const projects = Array.from(projectRows).map(function(r){
+    return {
+      name:   (r.querySelector('.ed-pr-name').value||'').trim(),
+      status: r.querySelector('.ed-pr-status').value||'Active',
+      desc:   (r.querySelector('.ed-pr-desc').value||'').trim()
+    };
+  }).filter(function(p){ return p.name; });
+  const tools = (document.getElementById('ed-tools').value||'').split(',')
+    .map(function(t){ return t.trim(); }).filter(Boolean);
+  return {
+    name:        (document.getElementById('ed-name').value||'').trim(),
+    emoji:       (document.getElementById('ed-emoji').value||'').trim(),
+    description: (document.getElementById('ed-desc').value||'').trim(),
+    vision:      (document.getElementById('ed-vision').value||'').trim(),
+    team: team,
+    projects: projects,
+    tools: tools,
+    channels:    (document.getElementById('ed-channels').value||'').trim(),
+    enabled:     document.getElementById('ed-enabled').checked
+  };
+}
+
+// Cascade a dept rename to every place that references the old name.
+function cascadeDeptRename(oldName, newName){
+  if(!oldName || !newName || oldName===newName) return;
+  if(Array.isArray(S.people))    S.people.forEach(function(p){ if(p.dept===oldName) p.dept=newName; });
+  if(Array.isArray(S.users))     S.users.forEach(function(u){ if(u.dept===oldName) u.dept=newName; });
+  if(S.user && S.user.dept===oldName) S.user.dept=newName;
+  if(Array.isArray(S.sections))  S.sections.forEach(function(s){ if(s.dept===oldName) s.dept=newName; });
+  if(Array.isArray(S.resources)) S.resources.forEach(function(r){ if(r.dept===oldName) r.dept=newName; });
+  if(Array.isArray(S.workflows)) S.workflows.forEach(function(w){ if(w.dept===oldName) w.dept=newName; });
+  // Best-effort cloud cascade — silently no-ops if Supabase isn't ready
+  if(window._supaReady && typeof sbRenameDepartment==='function'){
+    sbRenameDepartment(oldName, newName).catch(function(e){ console.warn('rename cascade:', e); });
+  }
+}
+
+function saveDept(){
+  const dept = _collectDeptFromModal();
+  if(!dept.name){ toast('Department name is required'); return; }
+  const original = (document.getElementById('ed-original-name').value||'').trim();
+  S.deptCatalog = Array.isArray(S.deptCatalog) ? S.deptCatalog : [];
+  // Uniqueness check (allow keeping the same name when editing)
+  const clash = S.deptCatalog.find(function(d){ return d.name===dept.name && d.name!==original; });
+  if(clash){ toast('A department named "'+dept.name+'" already exists'); return; }
+
+  const idx = original ? S.deptCatalog.findIndex(function(d){ return d.name===original; }) : -1;
+  if(idx>=0){
+    S.deptCatalog[idx] = dept;
+    if(original !== dept.name) cascadeDeptRename(original, dept.name);
+  } else {
+    S.deptCatalog.push(dept);
+  }
+  save();
+  if(window._supaReady){
+    sbSaveDepartment(dept, idx>=0?idx:S.deptCatalog.length-1)
+      .catch(function(e){ console.warn('sbSaveDepartment:', e); });
+  }
+  closeModal('modal-edit-dept');
+  populateDeptDropdowns();
+  _refreshActiveView();
+  toast(idx>=0?'Department updated ✓':'Department added ✓');
+}
+
+function deleteDeptByName(name){
+  if(!name) return;
+  confirmDelete('Delete the "'+name+'" department? Joiners and dropdowns will stop showing it.', function(){
+    S.deptCatalog = (S.deptCatalog||[]).filter(function(d){ return d.name!==name; });
+    save();
+    if(window._supaReady) sbDeleteDepartment(name).catch(function(e){ console.warn('sbDeleteDepartment:', e); });
+    populateDeptDropdowns();
+    _refreshActiveView();
+    toast('Removed');
+  });
+}
+
+// Re-render whichever sidebar view is currently active (after a state mutation).
+function _refreshActiveView(){
+  try{
+    var active = document.querySelector('.sb-item.active');
+    if(active && active.dataset && active.dataset.view) showContent(active.dataset.view);
+  }catch(e){}
+}
+
+// Rebuild every department <select> from the current catalog. Called once
+// on app boot, after Supabase load, and after every catalog edit.
+function populateDeptDropdowns(){
+  const cat = (S.deptCatalog||[]).filter(function(d){ return d.enabled !== false; });
+  const names = cat.map(function(d){ return d.name; });
+  const configs = [
+    {id:'np-dept',  includeAll:false},
+    {id:'um-dept',  includeAll:false, extra:['Admin']},
+    {id:'sec-dept', includeAll:true,  allLabel:'All Departments'},
+    {id:'rl-dept',  includeAll:true,  allLabel:'All'},
+    {id:'res-dept', includeAll:true,  allLabel:'All'},
+    {id:'wf-dept',  includeAll:true,  allLabel:'All'},
+    {id:'set-dept', includeAll:false},
+  ];
+  configs.forEach(function(c){
+    const sel = document.getElementById(c.id);
+    if(!sel) return;
+    const prev = sel.value;
+    let html = '';
+    if(c.includeAll) html += '<option value="all">'+(c.allLabel||'All')+'</option>';
+    names.forEach(function(n){ html += '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>'; });
+    (c.extra||[]).forEach(function(e){ html += '<option value="'+e+'">'+e+'</option>'; });
+    sel.innerHTML = html;
+    // Restore prior selection if it still exists, otherwise keep first option
+    const stillValid = Array.from(sel.options).some(function(o){ return o.value===prev; });
+    if(stillValid) sel.value = prev;
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -4934,12 +5313,24 @@ function runSplash(cb){ cb(); }
   try {
     if(typeof injectGoogleSSO==='function' && S.googleClientId) injectGoogleSSO(S.googleClientId);
     setTimeout(function(){ try{ updateSSOStatusBadge(); }catch(e){} }, 200);
+    // Department dropdowns are static markup until we hydrate them from the catalog
+    if(typeof populateDeptDropdowns==='function') populateDeptDropdowns();
     if(S.user){
       document.getElementById('login-screen').style.display='none';
       document.getElementById('app').classList.add('visible');
       buildNav(S.user.role);
       applyUser(S.user);
-
+      // Hydrate dept catalog from cloud for already-logged-in users on reload
+      if(window._supaReady && typeof sbLoadDepartments==='function'){
+        sbLoadDepartments().then(function(rows){
+          if(rows && rows.length){
+            S.deptCatalog = rows;
+            save();
+            populateDeptDropdowns();
+            if(typeof renderView==='function') try{ renderView(); }catch(e){}
+          }
+        }).catch(function(e){ console.warn('sbLoadDepartments error:',e); });
+      }
     } else {
       document.getElementById('login-screen').style.display='flex';
     }
