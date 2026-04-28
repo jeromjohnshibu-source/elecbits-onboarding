@@ -5939,7 +5939,8 @@ function loginWithCredentials(){
   if(!email){ alert('Please enter your email address.'); return; }
   if(!pass){  alert('Please enter your password.'); return; }
 
-  // Ensure S.users is always populated — merge hardcoded defaults with any added users
+  // Bootstrap S.users on first run only. Once an admin has curated the list
+  // via User Management, deletions must stick — never re-inject seeds.
   var _defaultUsers = [
     {id:1,name:'Saurav Singh',email:'saurav@elecbits.in',password:'admin123',role:'admin', dept:'Admin',    designation:'Co-Founder & CEO',           mgr:'',             active:true},
     {id:2,name:'Nikhil Rawat',email:'nikhil@elecbits.in',password:'lead123', role:'lead',  dept:'Hardware',           designation:'Co-Founder & CTO',           mgr:'Saurav Singh', active:true},
@@ -5948,14 +5949,6 @@ function loginWithCredentials(){
     {id:3,name:'Aanya Kumar', email:'aanya@elecbits.in', password:'join123', role:'joiner',dept:'Hardware',           designation:'Associate Hardware Engineer', mgr:'Nikhil Rawat', active:true},
   ];
   if(!S.users || S.users.length===0) S.users = _defaultUsers;
-  // Always make sure the core admin/lead accounts exist (in case localStorage was cleared).
-  // Match by id too — so a default lead whose email was edited isn't re-inserted as a duplicate.
-  _defaultUsers.forEach(function(du){
-    var exists = S.users.find(function(u){
-      return String(u.id)===String(du.id) || (u.email||'').toLowerCase()===du.email.toLowerCase();
-    });
-    if(!exists) S.users.push(du);
-  });
   // Try Supabase first, fall back to local instantly on any failure
   if(window._supaReady){
     var loginBtn = document.querySelector('.login-cta');
@@ -5990,7 +5983,8 @@ function loginWithCredentials(){
   _doLocalLogin(email, pass);
 }
 function _doLocalLogin(email, pass){
-  // Always rebuild _defaultUsers to ensure hardcoded logins always work
+  // First-run bootstrap only. Don't re-add seed users that an admin has
+  // deliberately removed from User Management.
   var _defaultUsers = [
     {id:1,name:'Saurav Singh',email:'saurav@elecbits.in',password:'admin123',role:'admin', dept:'Admin',              designation:'Co-Founder & CEO',              mgr:'',             active:true},
     {id:2,name:'Nikhil Rawat',email:'nikhil@elecbits.in',password:'lead123', role:'lead',  dept:'Hardware',           designation:'Co-Founder & CTO',              mgr:'Saurav Singh', active:true},
@@ -5999,12 +5993,6 @@ function _doLocalLogin(email, pass){
     {id:3,name:'Aanya Kumar', email:'aanya@elecbits.in', password:'join123', role:'joiner',dept:'Hardware',           designation:'Associate Hardware Engineer',   mgr:'Nikhil Rawat', active:true},
   ];
   if(!S.users || S.users.length===0) S.users = _defaultUsers;
-  _defaultUsers.forEach(function(du){
-    var exists = S.users.find(function(u){
-      return String(u.id)===String(du.id) || (u.email||'').toLowerCase()===du.email.toLowerCase();
-    });
-    if(!exists) S.users.push(du);
-  });
 
   var found = S.users.find(function(u){
     return u.email.toLowerCase()===email && u.password===pass && u.active;
@@ -6049,23 +6037,11 @@ function _doLocalLogin(email, pass){
 // ── USER MANAGEMENT RENDERER ─────────────────────────────────────
 
 // ── Build reporting manager dropdown options from S.users (leads + admins) ──
+// Pure read: do NOT auto-inject seed admins/leads here. If an admin has
+// deleted Priya/Arjun (or anyone) via User Management, they must stay gone —
+// otherwise opening the Add User modal silently brings them back.
 function _mgrOptions(selected){
-  // Always ensure default leads/admins exist in S.users before building dropdown
-  var _defaults = [
-    {id:1,name:'Saurav Singh', email:'saurav@elecbits.in',role:'admin',designation:'Co-Founder & CEO'},
-    {id:2,name:'Nikhil Rawat', email:'nikhil@elecbits.in',role:'lead', designation:'Co-Founder & CTO'},
-    {id:4,name:'Priya Mehta',  email:'priya@elecbits.in', role:'lead', designation:'Firmware Lead'},
-    {id:5,name:'Arjun Sharma', email:'arjun@elecbits.in', role:'lead', designation:'Project Management Lead'},
-  ];
   if(!S.users) S.users=[];
-  _defaults.forEach(function(d){
-    var exists = S.users.find(function(u){
-      return String(u.id)===String(d.id) || (u.email||'').toLowerCase()===d.email.toLowerCase();
-    });
-    if(!exists){
-      S.users.push(Object.assign({password:'',dept:'',mgr:'',active:true,createdAt:'2024-01-01'}, d));
-    }
-  });
   var managers = S.users.filter(function(u){ return u.role==='lead'||u.role==='admin'; });
   var opts = '<option value="">— Select manager —</option>';
   managers.forEach(function(u){
