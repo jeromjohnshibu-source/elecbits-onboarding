@@ -3213,6 +3213,44 @@ viewRenderers['admin-overview']=el=>{
 };
 
 // ──────────────────────────────────────────────
+// TEAM PROGRESS CACHE (admin/lead views)
+// ──────────────────────────────────────────────
+// Per-joiner module statuses loaded from Supabase on demand.
+// Shape: { 'rahul@elecbits.in': { 'm12': 'done', 'm13': 'in-progress', ... } }
+// The lead-progress and joiner-detail views read from this — never from
+// S.sections, which only reflects the *current viewer's* session state.
+window._teamProgress = window._teamProgress || {};
+function _emailKey(e){ return String(e||'').toLowerCase().trim(); }
+function _joinerModuleStatus(email, moduleId){
+  var bag = window._teamProgress[_emailKey(email)];
+  if(!bag) return null;          // null = not loaded yet
+  return bag[moduleId] || 'not-started';
+}
+function _ensureTeamProgressLoaded(emails){
+  if(!window._supaReady || !emails || !emails.length) return;
+  var pending = emails.filter(function(e){
+    var k = _emailKey(e);
+    return k && !Object.prototype.hasOwnProperty.call(window._teamProgress, k);
+  });
+  if(!pending.length) return;
+  // Reserve the slot so parallel renders don't refetch.
+  pending.forEach(function(e){ window._teamProgress[_emailKey(e)] = {}; });
+  var triggered = false;
+  Promise.all(pending.map(function(email){
+    return sbLoadProgress(email).then(function(m){
+      var bag = {};
+      Object.keys(m||{}).forEach(function(mid){
+        bag[mid] = (m[mid] && m[mid].status) || 'not-started';
+      });
+      window._teamProgress[_emailKey(email)] = bag;
+      triggered = true;
+    }).catch(function(err){ console.warn('team progress load error for', email, err); });
+  })).then(function(){
+    if(triggered && typeof _refreshActiveView==='function') _refreshActiveView();
+  });
+}
+
+// ──────────────────────────────────────────────
 // ADMIN PEOPLE
 // ──────────────────────────────────────────────
 // Day number computed from joining date (Day 1 = join date).
@@ -3561,6 +3599,9 @@ viewRenderers['lead-view']=viewRenderers['lead-progress']=el=>{
   const dept=S.user?.dept||'Hardware';
   const meEmail=(S.user?.email||'').toLowerCase();
   const team=S.people.filter(p=>p.dept===dept && (p.email||'').toLowerCase()!==meEmail);
+  // Pull each joiner's actual module statuses from Supabase. First render uses
+  // whatever is cached (empty for new joiners); the fetch re-renders on completion.
+  _ensureTeamProgressLoaded(team.map(function(p){ return p.email; }));
   const st=computeStats(dept);
   function estDate(p){const rem=100-p.progress;const days=Math.ceil(rem/3.5);const d=new Date();d.setDate(d.getDate()+days);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
   const totalMods=st.total; const doneMods=st.done; const ipMods=st.inProg;
@@ -3618,9 +3659,10 @@ viewRenderers['lead-view']=viewRenderers['lead-progress']=el=>{
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-family:var(--mono);margin:2px 0 10px"><span>${p.progress}% complete</span><span>${100-p.progress}% remaining</span></div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           ${S.sections.map(sec=>{
-            const sd=sec.modules.filter(m=>m.status==='done').length;
-            const st=sec.modules.length;
-            const sp=st?Math.round(sd/st*100):0;
+            const jp = window._teamProgress[_emailKey(p.email)];
+            const sd = jp ? sec.modules.filter(m=>jp[m.id]==='done').length : 0;
+            const st = sec.modules.length;
+            const sp = st?Math.round(sd/st*100):0;
             return`<div style="flex:1;min-width:130px;background:var(--bg3);border-radius:6px;padding:7px 10px;border:1px solid var(--border)">
               <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:3px">${sec.title.split('—')[0].trim()}</div>
               <div class="pb-wrap" style="height:3px;margin:0 0 3px"><div class="pb" style="width:${sp}%;background:${sp===100?'var(--green)':sp>0?'var(--amber)':'var(--red)'}"></div></div>
@@ -4628,10 +4670,19 @@ function removePerson(id){
     S.people = S.people.filter(function(x){ return String(x.id)!==String(id); });
     if(emailLower){
       S.users = (S.users||[]).filter(function(u){ return (u.email||'').toLowerCase()!==emailLower; });
+      // Drop any cached per-joiner progress so the lead view re-fetches fresh.
+      if(window._teamProgress) delete window._teamProgress[emailLower];
+      // Wipe the joiner's localStorage progress + state keys too.
+      try{
+        if(typeof _joinerKey==='function') localStorage.removeItem(_SV+_joinerKey(emailLower));
+      }catch(e){}
       if(window._supaReady){
-        sbDelete('users',  'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('users delete error:',e); });
-        sbDelete('people', 'email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('people delete error:',e); });
-        sbDelete('progress','joiner_email=eq.'+encodeURIComponent(emailLower)).catch(function(e){ console.warn('progress delete error:',e); });
+        var enc = encodeURIComponent(emailLower);
+        sbDelete('users',       'email=eq.'+enc).catch(function(e){ console.warn('users delete error:',e); });
+        sbDelete('people',      'email=eq.'+enc).catch(function(e){ console.warn('people delete error:',e); });
+        sbDelete('progress',    'joiner_email=eq.'+enc).catch(function(e){ console.warn('progress delete error:',e); });
+        sbDelete('feedbacks',   'joiner_email=eq.'+enc).catch(function(e){ console.warn('feedbacks delete error:',e); });
+        sbDelete('reflections', 'joiner_email=eq.'+enc).catch(function(e){ console.warn('reflections delete error:',e); });
       }
     }
     save();
@@ -5257,10 +5308,14 @@ function openJoinerDetail(id){
   const p=S.people.find(p=>p.id===id); if(!p) return;
   const isComplete=p.progress>=100||p.status==='Training completed';
   function estComplete(){const rem=100-p.progress;const days=Math.ceil(rem/4);const d=new Date();d.setDate(d.getDate()+days);return d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});}
+  // Statuses must come from THIS joiner's progress, not the lead's S.sections.
+  _ensureTeamProgressLoaded([p.email]);
+  const _bag = window._teamProgress[_emailKey(p.email)] || {};
+  const _statusFor = function(m){ return _bag[m.id] || 'not-started'; };
   const allMods=S.sections.flatMap(s=>s.modules);
-  const doneMods=allMods.filter(m=>m.status==='done');
-  const pendMods=allMods.filter(m=>m.status!=='done'&&m.status!=='locked');
-  const lockedMods=allMods.filter(m=>m.status==='locked');
+  const doneMods=allMods.filter(m=>_statusFor(m)==='done');
+  const pendMods=allMods.filter(m=>_statusFor(m)!=='done'&&_statusFor(m)!=='locked');
+  const lockedMods=allMods.filter(m=>_statusFor(m)==='locked');
 
   document.getElementById('jd-name').textContent=p.name+' — Training Progress';
   document.getElementById('jd-body').innerHTML=`
@@ -5276,7 +5331,8 @@ function openJoinerDetail(id){
       <div style="margin-bottom:14px">
         <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">${sec.title}</div>
         ${sec.modules.map(m=>{
-          const done=m.status==='done';const ip=m.status==='in-progress';const locked=m.status==='locked';
+          const ms=_statusFor(m);
+          const done=ms==='done';const ip=ms==='in-progress';const locked=ms==='locked';
           return`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:${done?'var(--green-l)':ip?'var(--amber-l)':locked?'var(--bg4)':'var(--bg3)'};border:1px solid ${done?'rgba(22,163,74,.2)':ip?'rgba(217,119,6,.2)':'var(--border)'};margin-bottom:6px">
             <span style="font-size:14px">${done?'✅':ip?'⏳':locked?'🔒':'○'}</span>
             <span style="font-size:12px;font-weight:500;flex:1;color:${locked?'var(--text3)':'var(--text)'}">${m.title}</span>
