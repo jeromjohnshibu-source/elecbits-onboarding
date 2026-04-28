@@ -788,6 +788,20 @@ to{opacity:1;transform:translateY(0)}}
   </div>
 </div>
 
+<!-- ══ SET WORK-UPDATE SHEET (lead/admin) ══ -->
+<div class="modal-backdrop" id="modal-work-update">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-hd"><h3 id="wu-modal-title">Work Update Sheet</h3><button class="modal-close" onclick="closeModal('modal-work-update')">✕</button></div>
+    <input type="hidden" id="wu-person-id"/>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Paste the link to <span id="wu-person-name" style="font-weight:700;color:var(--text)">this joiner</span>'s work-update sheet. They'll see a "Update work update sheet" button on their Home and under Work Update.</div>
+    <div class="fg"><label class="flabel">Sheet URL (Google Doc / Sheet / any link)</label><input class="finput" id="wu-url" placeholder="https://docs.google.com/…"/></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('modal-work-update')">Cancel</button>
+      <button class="btn primary" onclick="saveWorkUpdateLink()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ EDIT / ADD DEPARTMENT (admin) ══ -->
 <div class="modal-backdrop" id="modal-edit-dept">
   <div class="modal" style="max-width:760px">
@@ -2457,13 +2471,16 @@ function doLogin(user){
     _backfillDocsToSupabase().catch(function(e){ console.warn('docs backfill error:',e); });
   }
   // SUPABASE: fetch joiner's joining date (people.created_at) for tenure-based unlocks
+  // and the lead-assigned work-update sheet link
   if(user.role==='joiner' && window._supaReady){
     sbGet('people','email=eq.'+encodeURIComponent(user.email)).then(function(rows){
-      if(rows&&rows[0]&&rows[0].created_at){
-        S.user.joinedAt=rows[0].created_at;
+      if(rows&&rows[0]){
+        if(rows[0].created_at) S.user.joinedAt=rows[0].created_at;
+        if(rows[0].work_update_url!==undefined) S.user.workUpdateUrl=rows[0].work_update_url||'';
         save();
+        _refreshActiveView();
       }
-    }).catch(function(e){ console.warn('joinedAt fetch error:',e); });
+    }).catch(function(e){ console.warn('joiner profile fetch error:',e); });
   }
   // SUPABASE: sync people progress from DB on admin/lead login
   if((user.role==='admin'||user.role==='lead') && window._supaReady){
@@ -2471,13 +2488,18 @@ function doLogin(user){
       if(people && people.length){
         people.forEach(function(sp){
           var p=S.people.find(function(p){ return p.email&&p.email.toLowerCase()===sp.email.toLowerCase(); });
-          if(p){ p.progress=sp.progress||0; p.onboardStatus=sp.onboard_status||p.onboardStatus; }
+          if(p){
+            p.progress=sp.progress||0;
+            p.onboardStatus=sp.onboard_status||p.onboardStatus;
+            if(sp.work_update_url!==undefined) p.workUpdateUrl=sp.work_update_url||'';
+          }
           else { S.people.push({
             id: S.people.length+1, name:sp.name, email:sp.email,
             role:sp.role||'joiner', dept:sp.dept||'', designation:sp.designation||'',
             mgr:sp.mgr||'', track:sp.track||'Full Onboarding',
             day:sp.day||1, progress:sp.progress||0,
-            onboardStatus:sp.onboard_status||'New joiner', active:true
+            onboardStatus:sp.onboard_status||'New joiner', active:true,
+            workUpdateUrl: sp.work_update_url||''
           }); }
         });
         save();
@@ -2580,6 +2602,7 @@ const navDefs = {
     {section:'My Journey'},
     {id:'home',icon:'home',label:'Home'},
     {id:'dashboard',icon:'dashboard',label:'Dashboard'},
+    {id:'work-update',icon:'notebook',label:'Work Update'},
     {id:'modules',icon:'modules',label:'Learning Modules'},
     {id:'milestones',icon:'milestones',label:'Milestones & Career'},
     {section:'Company'},
@@ -3015,6 +3038,39 @@ viewRenderers['joiner-resources']=el=>{
 };
 
 // ──────────────────────────────────────────────
+// WORK UPDATE — joiner-facing daily sheet
+// ──────────────────────────────────────────────
+function _myWorkUpdateUrl(){
+  if(S.user && S.user.workUpdateUrl) return S.user.workUpdateUrl;
+  var p=(S.people||[]).find(function(x){ return x.email && S.user && x.email.toLowerCase()===(S.user.email||'').toLowerCase(); });
+  return (p && p.workUpdateUrl) || '';
+}
+function openMyWorkUpdate(){
+  var url = _myWorkUpdateUrl();
+  if(!url){ toast('Your lead hasn\'t shared your work-update sheet yet'); return; }
+  window.open(url,'_blank');
+}
+viewRenderers['work-update']=el=>{
+  var url = _myWorkUpdateUrl();
+  el.innerHTML = '<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;margin-bottom:6px">Work Update</div>'
+    + '<div class="muted" style="margin-bottom:18px;line-height:1.5">Summarise what you worked on each day in your personal work-update sheet. Your lead can review it any time.</div>'
+    + '<div class="card" style="padding:24px">'
+    +   '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">'
+    +     '<div style="width:54px;height:54px;border-radius:14px;background:rgba(61,111,232,.15);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">📓</div>'
+    +     '<div style="flex:1;min-width:220px">'
+    +       '<div style="font-size:14px;font-weight:800;color:var(--text)">'+(url?'Your work-update sheet is ready':'No sheet assigned yet')+'</div>'
+    +       '<div class="muted" style="margin-top:4px;line-height:1.5">'+(url
+            ?'Open it in a new tab and add today\'s update. Daily entries help your lead stay aligned with your progress.'
+            :'Once your lead shares the link, this card will let you open it in a single click.')+'</div>'
+    +     '</div>'
+    +     (url
+        ? '<button class="btn primary" style="font-size:13px;padding:10px 18px" onclick="openMyWorkUpdate()">Update work update sheet →</button>'
+        : '<button class="btn outline" style="font-size:13px;padding:10px 18px" disabled>Waiting for lead to share</button>')
+    +   '</div>'
+    + '</div>';
+};
+
+// ──────────────────────────────────────────────
 // MY REFLECTIONS — personal view for every role
 // ──────────────────────────────────────────────
 viewRenderers['reflections']=viewRenderers['my-reflections']=el=>{
@@ -3178,7 +3234,7 @@ viewRenderers['admin-people']=el=>{
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <table class="tbl">
-      <thead><tr><th>Name & Role</th><th>Dept.</th><th>Track</th><th>Day</th><th>Progress</th><th>Reporting Manager</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Name & Role</th><th>Dept.</th><th>Track</th><th>Day</th><th>Progress</th><th>Reporting Manager</th><th>Status</th><th>Work Update</th><th></th></tr></thead>
       <tbody>${S.people.map(p=>`<tr>
         <td><div style="font-weight:600;color:var(--text)">${p.name}</div><div class="muted">${p.role||p.email}</div></td>
         <td>${p.dept}</td><td class="muted">${p.track}</td>
@@ -3186,6 +3242,7 @@ viewRenderers['admin-people']=el=>{
         <td><span class="mini-bar"><span class="mini-bar-fill" style="width:${p.progress}%"></span></span><span style="font-family:var(--mono);font-size:10px">${p.progress}%</span></td>
         <td class="muted">${p.mgr||'—'}</td>
         <td><span class="chip ${chipCol(p.onboardStatus||p.status)}">${p.onboardStatus||p.status}</span></td>
+        <td>${_workUpdateCellHtml(p)}</td>
         <td style="display:flex;gap:4px">
           <button class="btn outline xs" onclick="editPerson(${p.id})">Edit</button>
           <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
@@ -3460,7 +3517,7 @@ viewRenderers['lead-members']=el=>{
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <table class="tbl">
-        <thead><tr><th>Name & Designation</th><th>Track</th><th>Join Day</th><th>Reporting To</th><th>Progress</th><th>Onboarding Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name & Designation</th><th>Track</th><th>Join Day</th><th>Reporting To</th><th>Progress</th><th>Onboarding Status</th><th>Work Update</th><th>Actions</th></tr></thead>
         <tbody>
           ${team.length?team.map(p=>`<tr>
             <td>
@@ -3481,13 +3538,14 @@ viewRenderers['lead-members']=el=>{
                 ${statuses.map(s=>`<option value="${s}" ${(p.onboardStatus||'New joiner')===s?'selected':''}>${s}</option>`).join('')}
               </select>
             </td>
+            <td>${_workUpdateCellHtml(p)}</td>
             <td style="display:flex;gap:4px">
               <button class="btn outline xs" onclick="openJoinerDetail(${p.id})">View</button>
               <button class="btn ghost xs" onclick="editPerson(${p.id})">Edit</button>
               <button class="btn ghost xs" onclick="removePerson(${p.id})">✕</button>
             </td>
           </tr>`).join('')
-          :'<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No team members yet. Click "+ Add Joiner".</td></tr>'}
+          :'<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text3)">No team members yet. Click "+ Add Joiner".</td></tr>'}
         </tbody>
       </table>
     </div>`;
@@ -4233,6 +4291,50 @@ function renderSelF(){
 }
 function rmFile(i){_selFiles.splice(i,1);renderSelF();}
 function isLinkResource(r){ return !!(r && r.ext==='link'); }
+
+// ── WORK UPDATE SHEET (lead/admin assigns; joiner consumes) ──
+function _workUpdateCellHtml(p){
+  if(!p) return '';
+  var url = (p.workUpdateUrl||'').trim();
+  if(url){
+    var safeUrl = String(url).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return ''
+      + '<div style="display:flex;gap:4px;align-items:center">'
+      +   '<button class="btn outline xs" title="Open sheet in a new tab" onclick="window.open(\''+safeUrl+'\',\'_blank\')">Open ↗</button>'
+      +   '<button class="btn ghost xs" title="Edit link" onclick="openWorkUpdateModal('+p.id+')">✎</button>'
+      + '</div>';
+  }
+  return '<button class="btn outline xs" onclick="openWorkUpdateModal('+p.id+')">Set link</button>';
+}
+function openWorkUpdateModal(personId){
+  var p=(S.people||[]).find(function(x){ return String(x.id)===String(personId); });
+  if(!p){ toast('Could not find that joiner'); return; }
+  document.getElementById('wu-person-id').value = String(p.id);
+  document.getElementById('wu-person-name').textContent = p.name || 'this joiner';
+  document.getElementById('wu-modal-title').textContent = (p.workUpdateUrl?'Edit ':'Set ') + 'work-update sheet';
+  document.getElementById('wu-url').value = p.workUpdateUrl || '';
+  openModal('modal-work-update');
+}
+function saveWorkUpdateLink(){
+  var pid = (document.getElementById('wu-person-id')||{}).value || '';
+  var raw = ((document.getElementById('wu-url')||{}).value || '').trim();
+  var p   = (S.people||[]).find(function(x){ return String(x.id)===String(pid); });
+  if(!p){ toast('Could not find that joiner'); return; }
+  if(raw && !/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
+  p.workUpdateUrl = raw;
+  // If the joiner is the current user, mirror to S.user too
+  if(S.user && p.email && S.user.email && p.email.toLowerCase()===S.user.email.toLowerCase()){
+    S.user.workUpdateUrl = raw;
+  }
+  save();
+  closeModal('modal-work-update');
+  _refreshActiveView();
+  toast(raw?'Work-update link saved ✓':'Work-update link cleared');
+  if(window._supaReady && p.email){
+    sbPatch('people','email=eq.'+encodeURIComponent(p.email), { work_update_url: raw })
+      .catch(function(e){ console.warn('sbPatch work_update_url:', e); });
+  }
+}
 function openAddResourceLink(dept, id){
   var idEl=document.getElementById('rl-id');   if(idEl) idEl.value = id||'';
   var titleEl=document.getElementById('rl-modal-title'); if(titleEl) titleEl.textContent = id?'Edit Resource Link':'Add Resource Link';
@@ -5560,6 +5662,25 @@ viewRenderers['home']=el=>{
       +         '</div>'
       +       '</div>'
       +     '</div>'
+      // Daily work-update sheet
+      +     (function(){
+            var wu = (typeof _myWorkUpdateUrl==='function') ? _myWorkUpdateUrl() : '';
+            var ctaHtml = wu
+              ? '<button class="btn primary sm" style="font-size:12px" onclick="openMyWorkUpdate()">Update work update sheet →</button>'
+              : '<button class="btn outline sm" style="font-size:12px;opacity:.6;cursor:default">Waiting for lead</button>';
+            var sub = wu
+              ? 'Capture today\'s progress in your sheet — opens in a new tab.'
+              : 'Your lead will share the link soon. This card unlocks the moment they do.';
+            return ''
+              + '<div style="margin-top:24px;display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px 18px">'
+              +   '<div style="width:42px;height:42px;border-radius:10px;background:rgba(61,111,232,.18);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">📓</div>'
+              +   '<div style="flex:1;min-width:0">'
+              +     '<div style="font-size:13px;font-weight:700;color:#fff">Daily work update</div>'
+              +     '<div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:2px">'+sub+'</div>'
+              +   '</div>'
+              +   ctaHtml
+              + '</div>';
+          })()
       // Next-up modules
       +     '<div style="margin-top:24px">'
       +       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
