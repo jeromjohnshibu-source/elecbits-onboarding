@@ -1740,7 +1740,7 @@ console.log('✓ Supabase connected:', SUPA_URL);
 // STATE
 // ══════════════════════════════════════════════
 // v16 — all modules unlocked
-const _SV='eb18_';
+const _SV='eb19_';
 const LS=k=>{try{return JSON.parse(localStorage.getItem(_SV+k))}catch{return null}};
 const SS=(k,v)=>{try{localStorage.setItem(_SV+k,JSON.stringify(v))}catch(e){
   if(e.name==='QuotaExceededError'||e.code===22){
@@ -3994,21 +3994,9 @@ window.openModuleById = function openModuleById(id){
     <div class="muted" style="margin-top:2px">${r.url||'No link'}</div></div>
     <button class="btn outline xs">Open →</button>
   </div>`).join(''):`<div class="muted" style="padding:20px 0;text-align:center">${empty}</div>`;
-  // Merge uploaded docs into prereads display for joiner
+  // Pre-reads only — uploaded docs/links live in the Documents tab now,
+  // not duplicated under Pre-reads.
   var displayPrereads = (mod.prereads||[]).slice();
-  // Pull from shared docs key (written by admin on upload)
-  try{
-    var sharedDocs=LS('docs');
-    if(sharedDocs&&sharedDocs[mod.id]){
-      sharedDocs[mod.id].forEach(function(d){
-        displayPrereads.push({title:d.title||d.filename, url:'__doc__', _doc:d});
-      });
-    } else if(mod.docs&&mod.docs.length){
-      mod.docs.forEach(function(d){
-        displayPrereads.push({title:d.title||d.filename, url:'__doc__', _doc:d});
-      });
-    }
-  }catch(e){}
   // Extended rHtml that handles embedded docs
   const rHtmlDocs=(items,empty)=>items&&items.length?items.map(r=>{
     if(r.url==='__doc__'&&r._doc&&r._doc.data){
